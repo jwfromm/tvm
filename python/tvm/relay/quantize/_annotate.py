@@ -163,6 +163,12 @@ def conv2d_rewrite(ref_call, new_args, ctx):
             _set_conv_counter(cnt + 1)
             return None
 
+    in_channels = new_args[1].data.shape[1]
+    if in_channels % 4 != 0:
+        print(
+            "Conv layer %d may not benefit from quantization. Consider leaving it unquantized."
+            % cnt)
+
     _set_conv_counter(cnt + 1)
 
     lhs_expr, lhs_kind = _get_expr_kind(new_args[0])
