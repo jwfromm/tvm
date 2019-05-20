@@ -30,6 +30,7 @@ from topi.util import get_const_tuple
 from .. import ir_pass
 from .. import expr as _expr
 from .. import op as _op
+from .. import annotation as _annotation
 from ..expr_functor import ExprMutator
 from .. import module as _module
 
@@ -707,10 +708,10 @@ def _depth_to_space():
             new_w = in_w * block_size
             newshape = (in_n, new_c, new_h, new_w)
 
-        return AttrCvt(
-            op_name="reshape",
-            extras={'newshape': newshape},
-            ignores=['data_format', 'block_size'])([transposed], attr)
+        return _annotation.stop_fusion(
+            AttrCvt(op_name="reshape",
+                    extras={'newshape': newshape},
+                    ignores=['data_format', 'block_size'])([transposed], attr))
 
     return _impl
 
