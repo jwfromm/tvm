@@ -408,6 +408,100 @@ def _convert_enter_integer(inexpr, keras_layer, etab):
     return inexpr
 
 
+def _convert_bitserial_convolution(inexpr, keras_layer, etab):
+    _check_data_format(keras_layer)
+    weightList = keras_layer.get_weights()
+    kernel_h, kernel_w, in_channels, n_filters = weightList[0].shape
+    weight = weightList[0].transpose([3, 2, 0, 1])
+    dilation = [1, 1]
+    if isinstance(keras_layer.dilation_rate, (list, tuple)):
+        dilation = [keras_layer.dilation_rate[0], keras_layer.dilation_rate[1]]
+    else:
+        dilation = [keras_layer.dilation_rate, keras_layer.dilation_rate]
+    dilated_kernel_h = (kernel_h - 1) * dilation[0] + 1
+    dilated_kernel_w = (kernel_w - 1) * dilation[1] + 1
+    stride_h, stride_w = keras_layer.strides
+    params = {'weight': etab.new_const(weight),
+              'kernel_size': [kernel_h, kernel_w],
+              'strides': [stride_h, stride_w],
+              'dilation': dilation,
+              'padding': [0, 0]}
+    params['channels'] = n_filters
+    if keras_layer.padding == 'valid':
+        pass
+    # we insert a separate pad operator
+    elif keras_layer.padding == 'same':
+        in_h = keras_layer.input_shape[1]
+        in_w = keras_layer.input_shape[2]
+        pad_t, pad_b = _get_pad_pair(in_h, dilated_kernel_h, stride_h)
+        pad_l, pad_r = _get_pad_pair(in_w, dilated_kernel_w, stride_w)
+        if pad_t == pad_b and pad_l == pad_r:
+            params['padding'] = (pad_t, pad_l)
+        else:
+            inexpr = _op.nn.pad(data=inexpr, pad_width=(
+                (0, 0), (0, 0), (pad_t, pad_b), (pad_l, pad_r)))
+    else:
+        msg = 'Padding with {} is not supported for operator Convolution ' \
+              'in frontend Keras.'
+        raise tvm.error.OpAttributeUnimplemented(msg.format(keras_layer.padding))
+    out = _op.nn.conv2d(data=inexpr, **params)
+    if keras_layer.use_bias:
+        bias = etab.new_const(weightList[1])
+        out = _op.nn.bias_add(out, bias)
+    # defuse activation
+    act_type = keras_layer.activation.__name__
+    if act_type != 'linear':
+        out = _convert_activation(out, act_type, etab)
+    return out
+
+
+def _convert_bitserial_dense(inexpr, keras_layer, etab):
+    weightList = keras_layer.get_weights()
+    weight = etab.new_const(weightList[0].transpose([1, 0]))
+    params = {'weight':weight, 'units':weightList[0].shape[1]}
+    input_shape = keras_layer.input_shape
+    input_dim = len(input_shape)
+    out = _op.nn.dense(data=inexpr, **params)
+    if keras_layer.use_bias:
+        bias = etab.new_const(weightList[1])
+        out = _op.nn.bias_add(out, bias)
+    # defuse activation
+    act_type = keras_layer.activation.__name__
+    if act_type != 'linear':
+        out = _convert_activation(out, act_type, etab)
+    return out
+
+
+def _convert_shiftnorm(inexpr, keras_layer, etab):
+    params = {'scale': False,
+              'center': False,
+              'gamma': _expr.const(1.0),
+              'beta': _expr.const(0.0),
+              'epsilon': keras_layer.epsilon}
+    idx = 0
+    if keras_layer.scale:
+        params['scale'] = True
+        gamma = keras_layer.get_weights()[idx]
+        params['gamma'] = etab.new_const(gamma)
+        idx += 1
+    if keras_layer.center:
+        params['center'] = True
+        beta = keras_layer.get_weights()[idx]
+        params['beta'] = etab.new_const(beta)
+        idx += 1
+    moving_mean = keras_layer.get_weights()[idx]
+    moving_var = keras_layer.get_weights()[idx + 1]
+    params['moving_mean'] = etab.new_const(moving_mean)
+    params['moving_var'] = etab.new_const(moving_var)
+    result, moving_mean, moving_var = _op.nn.batch_norm(inexpr, **params)
+    return result
+
+
+def _convert_scalu(inexpr, keras_layer, etab):
+    scale = etab.new_const(keras_layer.get_weights()[0])
+    return inexpr * scale
+
+
 def _convert_batchnorm(inexpr, keras_layer, etab):
     params = {'scale': False,
               'center': False,
@@ -617,6 +711,10 @@ _convert_map = {
     'Cropping2D'               : _convert_cropping,
 
     'EnterInteger'             : _convert_enter_integer,
+    'BinaryConv2D'             : _convert_bitserial_convolution,
+    'BinaryDense'              : _convert_bitserial_dense,
+    'ShiftNormalization'       : _convert_shiftnorm,
+    'Scalu'                    : _convert_scalu,
 
     # 'ZeroPadding1D'          : _convert_padding,
     # 'AveragePooling1D'       : _convert_pooling,
@@ -753,17 +851,21 @@ def from_keras(model, shape=None):
                         expr_name = inbound_layer.name
                         _convert_input_layer(inbound_layer)
                     else:
-                        expr_name = inbound_layer.name + ':' + str(n_idx) + ':' + str(t_idx)
+                        expr_name = inbound_layer.output.name + ':' + str(t_idx)
                     expr = etab.get_expr(expr_name)
                     inexpr.append(expr)
                 if len(inexpr) == 1:
                     inexpr = inexpr[0]
-                keras_op_to_relay(inexpr, keras_layer, keras_layer.name + ':' + str(node_idx), etab)
+                keras_op_to_relay(inexpr, keras_layer, keras_layer.output.name, etab)
     # model._output_coordinates contains out_node(oc[0]), node_index(oc[1]) and tensor_index(oc[2])
     # Get all output nodes in etab using the name made from above values.
     # The out exprs were added to etab in keras_op_to_relay using this name.
-    outexpr = [etab.get_expr(oc[0].name + ":" + str(oc[1]) + ":" + str(oc[2])) \
-               for oc in model._output_coordinates]
+    outexpr = []
+    for output in model.outputs:
+        out_ctr = 0
+        while (output.name + ':' + str(out_ctr)) in outexpr:
+            out_ctr += 1
+        outexpr.append(etab.get_expr(output.name + ':' + str(out_ctr)))
     outexpr = outexpr[0] if len(outexpr) == 1 else _expr.Tuple(outexpr)
     func = _expr.Function(ir_pass.free_vars(outexpr), outexpr)
     params = {k:_nd.array(np.array(v, dtype=np.float32)) for k, v in etab.params.items()}
