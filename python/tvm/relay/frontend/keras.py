@@ -396,9 +396,23 @@ def _convert_cropping(inexpr, keras_layer, _):
         end=[int32_max, int32_max, in_h-crop_b, in_w-crop_r])
 
 
+def _convert_enter_integer(inexpr, keras_layer, etab):
+    # Extract layer information
+    scale = _expr.const(keras_layer.scale, dtype='float32')
+    bit_range = _expr.const(2**(keras_layer.bits - 1), dtype='float32')
+
+    inexpr = inexpr * scale
+    # Now quantize input
+    inexpr = _op.clip(inexpr, a_min=0., a_max=1.)
+    inexpr = _op.round(bit_range * inexpr)
+    return inexpr
+
+
 def _convert_batchnorm(inexpr, keras_layer, etab):
     params = {'scale': False,
               'center': False,
+              'gamma': _expr.const(1.0),
+              'beta': _expr.const(0.0),
               'epsilon': keras_layer.epsilon}
     idx = 0
     if keras_layer.scale:
@@ -593,6 +607,7 @@ _convert_map = {
     'Reshape'                  : _convert_reshape,
     'Concatenate'              : _convert_concat,
     'BatchNormalization'       : _convert_batchnorm,
+    'BatchNormalizationV2'     : _convert_batchnorm,
 
     'Add'                      : _convert_merge,
     'Subtract'                 : _convert_merge,
@@ -600,6 +615,8 @@ _convert_map = {
     'ZeroPadding2D'            : _convert_padding,
     'UpSampling2D'             : _convert_upsample,
     'Cropping2D'               : _convert_cropping,
+
+    'EnterInteger'             : _convert_enter_integer,
 
     # 'ZeroPadding1D'          : _convert_padding,
     # 'AveragePooling1D'       : _convert_pooling,
@@ -687,15 +704,15 @@ def from_keras(model, shape=None):
         The parameter dict to be used by Relay.
     """
     try:
-        import keras
+        import tensorflow.keras as keras
     except ImportError:
         raise ImportError('Keras must be installed')
-    assert isinstance(model, keras.engine.training.Model)
+    assert isinstance(model, keras.models.Model)
     if keras.backend.backend() != 'tensorflow':
         raise ValueError("Keras frontend currently supports tensorflow backend only.")
     if keras.backend.image_data_format() != 'channels_last':
         raise ValueError("Keras frontend currently supports data_format = channels_last only.")
-    _check_unsupported_layers(model)
+    #_check_unsupported_layers(model)
 
     def _convert_input_layer(keras_layer):
         input_name = keras_layer.name
@@ -704,7 +721,7 @@ def from_keras(model, shape=None):
 
     etab = ExprTable()
     for keras_layer in model.layers:
-        if isinstance(keras_layer, keras.engine.InputLayer):
+        if isinstance(keras_layer, keras.layers.InputLayer):
             _convert_input_layer(keras_layer)
         else:
             inbound_nodes = keras_layer.inbound_nodes if hasattr(keras_layer, 'inbound_nodes') \
@@ -717,17 +734,22 @@ def from_keras(model, shape=None):
                 # If some nodes in imported model is not relevant to the current model,
                 # skip such layers. model._network_nodes contains keys of all nodes relevant
                 # to the current model.
-                if not model._node_key(keras_layer, node_idx) in model._network_nodes:
-                    continue
+                #if not model._node_key(keras_layer, node_idx) in model._network_nodes:
+                #    continue
                 inexpr = []
                 # Since Keras allows creating multiple layers from the same name instance,
                 # we append node index to the expr name to make it unique.
                 # The one exception is InputLayer. Changing input variable names after conversion
                 # would confuse users, so we should keep them as far as possible. Fortunately,
                 # they are named uniquely to input_1, input_2, input_3... by default.
-                zip_node = zip(node.node_indices, node.tensor_indices, node.inbound_layers)
+                def _as_list(x):
+                    if isinstance(x, list):
+                        return x
+                    else:
+                        return [x]
+                zip_node = zip(_as_list(node.node_indices), _as_list(node.tensor_indices), _as_list(node.inbound_layers))
                 for n_idx, t_idx, inbound_layer in zip_node:
-                    if isinstance(inbound_layer, keras.engine.InputLayer):
+                    if isinstance(inbound_layer, keras.layers.InputLayer):
                         expr_name = inbound_layer.name
                         _convert_input_layer(inbound_layer)
                     else:
