@@ -34,6 +34,7 @@ def _check_data_format(keras_layer):
     if hasattr(keras_layer, ('data_format')):
         if keras_layer.data_format != 'channels_last':
             raise ValueError("Keras frontend currently supports data_format = channels_last only.")
+    return
 
 
 def _get_pad_pair(input1d, kernel1d, stride1d):
@@ -475,8 +476,6 @@ def _convert_bitserial_dense(inexpr, keras_layer, etab):
 def _convert_shiftnorm(inexpr, keras_layer, etab):
     params = {'scale': False,
               'center': False,
-              'gamma': _expr.const(1.0),
-              'beta': _expr.const(0.0),
               'epsilon': keras_layer.epsilon}
     idx = 0
     if keras_layer.scale:
@@ -491,9 +490,17 @@ def _convert_shiftnorm(inexpr, keras_layer, etab):
         idx += 1
     moving_mean = keras_layer.get_weights()[idx]
     moving_var = keras_layer.get_weights()[idx + 1]
+    if len(keras_layer.input.shape) == 4:
+        moving_mean = np.reshape(moving_mean, [1, -1, 1, 1])
+        moving_var = np.reshape(moving_var, [1, -1, 1, 1])
     params['moving_mean'] = etab.new_const(moving_mean)
     params['moving_var'] = etab.new_const(moving_var)
-    result, moving_mean, moving_var = _op.nn.batch_norm(inexpr, **params)
+    if 'gamma' not in params.keys():
+        params['gamma'] = etab.new_const(np.ones_like(moving_mean))
+    if 'beta' not in params.keys():
+        params['beta'] = etab.new_const(np.zeros_like(moving_mean))
+    #result, moving_mean, moving_var = _op.nn.batch_norm(inexpr, **params)
+    result = (inexpr / params['moving_var']) - params['moving_mean']
     return result
 
 
@@ -505,8 +512,6 @@ def _convert_scalu(inexpr, keras_layer, etab):
 def _convert_batchnorm(inexpr, keras_layer, etab):
     params = {'scale': False,
               'center': False,
-              'gamma': _expr.const(1.0),
-              'beta': _expr.const(0.0),
               'epsilon': keras_layer.epsilon}
     idx = 0
     if keras_layer.scale:
@@ -523,6 +528,10 @@ def _convert_batchnorm(inexpr, keras_layer, etab):
     moving_var = keras_layer.get_weights()[idx + 1]
     params['moving_mean'] = etab.new_const(moving_mean)
     params['moving_var'] = etab.new_const(moving_var)
+    if 'gamma' not in params.keys():
+        params['gamma'] = etab.new_const(np.ones_like(moving_mean))
+    if 'beta' not in params.keys():
+        params['beta'] = etab.new_const(np.zeros_like(moving_mean))
     result, moving_mean, moving_var = _op.nn.batch_norm(inexpr, **params)
     return result
 
@@ -815,6 +824,15 @@ def from_keras(model, shape=None):
     def _convert_input_layer(keras_layer):
         input_name = keras_layer.name
         input_shape = shape[input_name] if shape is not None and input_name in shape else None
+        # Check if input shape is defined in its output.
+        if input_shape is None:
+            if keras_layer.output.shape is not None:
+                input_shape = keras_layer.output.shape.as_list()
+        # Check outbound layers, if they have data format NHWC, then we need to transpose.
+        out_layer = keras_layer.outbound_nodes[0].outbound_layer
+        if hasattr(out_layer, 'data_format'):
+            if out_layer.data_format == 'channels_last':
+                input_shape = [input_shape[0], input_shape[3], input_shape[1], input_shape[2]]
         etab.set_expr(input_name, new_var(input_name, shape=input_shape))
 
     etab = ExprTable()
