@@ -30,11 +30,12 @@ void aec_get_probs(TVMArgs args, TVMRetValue* rv) {
 
   for (int i = 0; i < N; ++i) {
     cl.set_data(codelayers_data);
+    const size_t codelayer_size = cl.size();
 
     aec_api::get_code_probs(cl, feature_probs_data, probs_data);
 
-    codelayers_data += cl.size();
-    probs_data += cl.size();
+    codelayers_data += codelayer_size;
+    probs_data += codelayer_size;
   }
 }
 

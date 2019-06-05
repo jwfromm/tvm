@@ -17,11 +17,9 @@ void get_aec_probs_mask(TVMArgs args, TVMRetValue* rv) {
   DLTensor* codelayers = args[0];
   DLTensor* feature_probs = args[1];
   DLTensor* mask = args[2];
+  DLTensor* probs = args[3];
 
   // Allocate output tensor.
-  DLTensor* probs;
-  TVMArrayAlloc(codelayers->shape, codelayers->ndim, 0, 32, 1, codelayers->ctx.device_type,
-                codelayers->ctx.device_id, &probs);
   const uint8_t* codelayers_data = static_cast<uint8_t*>(codelayers->data);
   const aec_api::wo_prob_t* feature_probs_data =
       static_cast<aec_api::wo_prob_t*>(feature_probs->data);
@@ -42,7 +40,6 @@ void get_aec_probs_mask(TVMArgs args, TVMRetValue* rv) {
     probs_data += codelayer_size;
     mask_data += codelayer_size;
   }
-  *rv = probs;
 }
 
 TVM_REGISTER_GLOBAL("tvm.contrib.compression.get_aec_probs_mask").set_body(get_aec_probs_mask);
