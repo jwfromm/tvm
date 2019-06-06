@@ -1,5 +1,6 @@
 if (USE_COMPRESSION)
   set (WO_ROOT src/contrib/compression/wolib)
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWO_LOG_LEVEL=3")
   message(STATUS "Build with waveone compression.")
   include_directories(
 	${WO_ROOT}
