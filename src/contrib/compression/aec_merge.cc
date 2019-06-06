@@ -26,7 +26,7 @@ void aec_merge(TVMArgs args, TVMRetValue* rv) {
   CHECK(args.num_args > 0);
   CHECK(args.num_args % 2 == 0);
 
-  auto num_aec = args.num_args / 2;
+  auto num_aec = (args.num_args - 2) / 2;
 
   auto N = ((DLTensor*)args[0])->shape[0];
   uint32_t output_size = 0;
@@ -41,7 +41,7 @@ void aec_merge(TVMArgs args, TVMRetValue* rv) {
     ++codelen_idx;
     auto code_dims = code_tensor->ndim;
 
-    CHECK(code_dims == 4) || (code_dims == 5);
+    CHECK((code_dims == 4) || (code_dims == 5));
     CHECK(N == code_tensor->shape[0]);
 
     // C, H, W, B
@@ -60,8 +60,8 @@ void aec_merge(TVMArgs args, TVMRetValue* rv) {
     }
   }
   output_size = aecMerge.get_output_buffer_size();
-  DLTensor* merged_tensor = args[i++];
-  DLTensor* merged_len_tensor = args[i];
+  DLTensor* merged_tensor = args[args.num_args - 2];
+  DLTensor* merged_len_tensor = args[args.num_args - 1];
 
   aecMerge.generate_output(static_cast<uint8_t*>(merged_tensor->data), num_elements(merged_tensor));
   auto merged_len_data = static_cast<int32_t*>(merged_len_tensor->data);
