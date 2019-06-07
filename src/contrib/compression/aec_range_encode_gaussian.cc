@@ -18,10 +18,10 @@ using namespace runtime;
 
 void aec_range_encode_gaussian(TVMArgs args, TVMRetValue* rv) {
   // Inputs
-  DLTensor* quantized = args[0];
-  DLTensor* div_A_norm = args[1];
-  DLTensor* lookup = args[2];
-  bool serialize = args[3];
+  const DLTensor* quantized = args[0];
+  const DLTensor* div_A_norm = args[1];
+  const DLTensor* lookup = args[2];
+  const bool serialize = args[3];
   // Outputs
   DLTensor* encoded = args[4];
   DLTensor* sizes = args[5];
@@ -46,8 +46,8 @@ void aec_range_encode_gaussian(TVMArgs args, TVMRetValue* rv) {
   if ((int)work_buffer_.size() < workbuff_min_size) {
     work_buffer_.resize(workbuff_min_size);
   }
-  wo_block_t *block_buffer = work_buffer_.data();
-  wo_code_t *zero_prob_buffer = (wo_code_t*)(block_buffer + block_buffer_size);
+  wo_block_t* block_buffer = work_buffer_.data();
+  wo_code_t* zero_prob_buffer = (wo_code_t*)(block_buffer + block_buffer_size);
 
   for (int i = 0; i < N; ++i) {
     if (serialize) {

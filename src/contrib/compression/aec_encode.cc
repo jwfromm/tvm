@@ -15,8 +15,8 @@ using namespace runtime;
 
 void aec_encode(TVMArgs args, TVMRetValue* rv) {
   // Inputs
-  DLTensor *codelayers = args[0];
-  DLTensor *probs = args[1];
+  const DLTensor *codelayers = args[0];
+  const DLTensor *probs = args[1];
   // Outputs
   DLTensor *encoded = args[2];
   DLTensor *sizes = args[3];

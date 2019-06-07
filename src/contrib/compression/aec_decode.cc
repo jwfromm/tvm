@@ -15,14 +15,14 @@ using namespace runtime;
 
 void aec_decode(TVMArgs args, TVMRetValue* rv) {
   // Inputs
-  const DLTensor *encoded = args[0];
-  const DLTensor *probs = args[1];
+  const DLTensor* encoded = args[0];
+  const DLTensor* probs = args[1];
   // Outputs
-  DLTensor *codelayers = args[2];
-  
-  const aec_api::wo_prob_t *probs_data = static_cast<aec_api::wo_prob_t*>(probs->data);
-  const uint8_t *encoded_data = static_cast<uint8_t*>(encoded->data);
-  const uint8_t *codelayers_data = static_cast<uint8_t*>(codelayers->data);
+  DLTensor* codelayers = args[2];
+
+  const aec_api::wo_prob_t* probs_data = static_cast<aec_api::wo_prob_t*>(probs->data);
+  const uint8_t* encoded_data = static_cast<uint8_t*>(encoded->data);
+  const uint8_t* codelayers_data = static_cast<uint8_t*>(codelayers->data);
 
   int N = codelayers->shape[0], C = codelayers->shape[1], H = codelayers->shape[2],
       W = codelayers->shape[3], B = codelayers->shape[4];
