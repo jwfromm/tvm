@@ -15,11 +15,11 @@ using namespace runtime;
 
 void aec_encode(TVMArgs args, TVMRetValue* rv) {
   // Inputs
-  DLTensor* codelayers = args[0];
-  DLTensor* probs = args[1];
+  DLTensor *codelayers = args[0];
+  DLTensor *probs = args[1];
   // Outputs
-  DLTensor* encoded = args[2];
-  DLTensor* sizes = args[3];
+  DLTensor *encoded = args[2];
+  DLTensor *sizes = args[3];
 
   int N = codelayers->shape[0], C = codelayers->shape[1], H = codelayers->shape[2],
       W = codelayers->shape[3], B = codelayers->shape[4];
@@ -34,7 +34,7 @@ void aec_encode(TVMArgs args, TVMRetValue* rv) {
 
   std::vector<aec_api::wo_block_t> work_buffer_;
   const int encoded_maxsize = C * H * W * B;
-  uint16_t workbuff_min_size = cl.size() * 2;
+  uint32_t workbuff_min_size = cl.size() * 2;
   if (work_buffer_.size() < workbuff_min_size) {
     work_buffer_.resize(workbuff_min_size);
   }

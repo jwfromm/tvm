@@ -13,7 +13,7 @@ namespace contrib {
 
 using namespace runtime;
 
-int num_elements(const DLTensor* input) {
+inline int num_elements(const DLTensor *input) {
   int nelems = 1;
   for (int i = 0; i < input->ndim; ++i) {
     nelems *= input->shape[i];
@@ -28,16 +28,15 @@ void aec_merge(TVMArgs args, TVMRetValue* rv) {
 
   auto num_aec = (args.num_args - 2) / 2;
 
-  auto N = ((DLTensor*)args[0])->shape[0];
-  uint32_t output_size = 0;
+  auto N = ((DLTensor *)args[0])->shape[0];
 
   aec_api::Merge aecMerge(N, num_aec);
 
   int codelen_idx = num_aec;
   int i;
   for (i = 0; i < num_aec; ++i) {
-    const DLTensor* code_tensor = args[i];
-    const DLTensor* codelen_tensor = args[codelen_idx];
+    const DLTensor *code_tensor = args[i];
+    const DLTensor *codelen_tensor = args[codelen_idx];
     ++codelen_idx;
     auto code_dims = code_tensor->ndim;
 
@@ -59,9 +58,8 @@ void aec_merge(TVMArgs args, TVMRetValue* rv) {
       aecMerge.add_code_input_len(i, codelen_data[n]);
     }
   }
-  output_size = aecMerge.get_output_buffer_size();
-  DLTensor* merged_tensor = args[args.num_args - 2];
-  DLTensor* merged_len_tensor = args[args.num_args - 1];
+  DLTensor *merged_tensor = args[args.num_args - 2];
+  DLTensor *merged_len_tensor = args[args.num_args - 1];
 
   aecMerge.generate_output(static_cast<uint8_t*>(merged_tensor->data), num_elements(merged_tensor));
   auto merged_len_data = static_cast<int32_t*>(merged_len_tensor->data);

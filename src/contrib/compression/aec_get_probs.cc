@@ -14,9 +14,9 @@ namespace contrib {
 using namespace runtime;
 
 void aec_get_probs(TVMArgs args, TVMRetValue* rv) {
-  DLTensor* codelayers = args[0];
-  DLTensor* feature_probs = args[1];
-  DLTensor* probs = args[2];
+  DLTensor *codelayers = args[0];
+  DLTensor *feature_probs = args[1];
+  DLTensor *probs = args[2];
 
   const uint8_t* codelayers_data = static_cast<uint8_t*>(codelayers->data);
   const aec_api::wo_prob_t* feature_probs_data =
