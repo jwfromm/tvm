@@ -32,7 +32,12 @@ def conv2d(data,
            data_layout="NCHW",
            kernel_layout="OIHW",
            out_layout="",
-           out_dtype=""):
+           out_dtype="",
+           binarize=False,
+           activation_bits=1,
+           weight_bits=1,
+           pack_dtype='uint16',
+           unipolar=True):
     r"""2D convolution.
 
     This operator takes the weight as the convolution kernel
@@ -101,9 +106,10 @@ def conv2d(data,
     result : tvm.relay.Expr
         The computed result.
     """
-    return _make.conv2d(data, weight, strides, padding, dilation,
-                        groups, channels, kernel_size, data_layout,
-                        kernel_layout, out_layout, out_dtype)
+    return _make.conv2d(data, weight, strides, padding, dilation, groups,
+                        channels, kernel_size, data_layout, kernel_layout,
+                        out_layout, out_dtype, binarize, activation_bits,
+                        weight_bits, pack_dtype, unipolar)
 
 
 def conv2d_transpose(data,

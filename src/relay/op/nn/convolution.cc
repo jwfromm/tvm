@@ -152,7 +152,12 @@ Expr MakeConv2D(Expr data,
                 std::string data_layout,
                 std::string kernel_layout,
                 std::string out_layout,
-                DataType out_dtype) {
+                DataType out_dtype,
+                bool binarize,
+                int activation_bits,
+                int weight_bits,
+                DataType pack_dtype,
+                bool unipolar) {
   auto attrs = make_node<Conv2DAttrs>();
   attrs->strides = std::move(strides);
   attrs->padding = std::move(padding);
@@ -164,6 +169,11 @@ Expr MakeConv2D(Expr data,
   attrs->kernel_layout = std::move(kernel_layout);
   attrs->out_layout = std::move(out_layout);
   attrs->out_dtype = std::move(out_dtype);
+  attrs->binarize = binarize;
+  attrs->activation_bits = activation_bits;
+  attrs->weight_bits = weight_bits;
+  attrs->pack_dtype = std::move(pack_dtype);
+  attrs->unipolar = unipolar;
   static const Op& op = Op::Get("nn.conv2d");
   return CallNode::make(op, {data, weight}, Attrs(attrs), {});
 }

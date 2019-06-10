@@ -391,7 +391,10 @@ def _topi_nn_conv2d_NCHWc(*args, **kwargs):
 def _alter_conv2d_layout(attrs, inputs, tinfo, F):
 
     copy_inputs = [s for s in inputs]
-    new_attrs = {k : attrs[k] for k in attrs.keys()}
+    q_attr_list = ['activation_bits', 'weight_bits', 'pack_dtype', 'unipolar']
+    quantize_attrs = {k : attrs[k] for k in attrs.keys() if k in q_attr_list}
+    new_attrs = {k : attrs[k] for k in attrs.keys() if k not in q_attr_list}
+    binarize = new_attrs.pop('binarize', False)
 
     if F.__name__ == 'tvm.relay.op':
         # Derive channels for frontends (e.g ONNX) that miss "channel" field.
@@ -420,6 +423,9 @@ def _alter_conv2d_layout(attrs, inputs, tinfo, F):
     is_depthwise = groups == kshape[0] and kshape[1] == 1
 
     # only optimize for NCHW
+    # Check here for quantize argument?
+    if binarize:
+        return None
     if layout != 'NCHW' or attrs["kernel_layout"] != "OIHW":
         return None
 
@@ -556,7 +562,7 @@ def _declaration_conv_NCHWc(cfg, data, kernel, strides,
                                    axis=[kh, kw, ic_outer, ic_f_inner, ic_s_inner]),
                            name='conv2d_NCHWc_int8', tag="conv2d_NCHWc_int8")
     if data.dtype == 'uint8':
-    	# for int8 group conv support
+        # for int8 group conv support
         n_elems = 4
         ic_chunk = in_channel//ic_bn
         ic_outer = tvm.reduce_axis((0, ic_chunk//groups), name='ic_outer')

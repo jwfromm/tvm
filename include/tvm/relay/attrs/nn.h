@@ -59,6 +59,12 @@ struct Conv2DAttrs : public tvm::AttrsNode<Conv2DAttrs> {
   std::string kernel_layout;
   std::string out_layout;
   DataType out_dtype;
+  bool binarize;
+  int activation_bits;
+  int weight_bits;
+  DataType pack_dtype;
+  bool unipolar;
+
 
   TVM_DECLARE_ATTRS(Conv2DAttrs, "relay.attrs.Conv2DAttrs") {
     TVM_ATTR_FIELD(strides).set_default(Array<IndexExpr>({1, 1}))
@@ -99,6 +105,21 @@ struct Conv2DAttrs : public tvm::AttrsNode<Conv2DAttrs> {
     TVM_ATTR_FIELD(out_dtype)
         .set_default(NullValue<DataType>())
         .describe("Output data type, set to explicit type under mixed precision setting");
+    TVM_ATTR_FIELD(binarize)
+        .set_default(false)
+        .describe("Whether to use a binary convolution or not.");
+    TVM_ATTR_FIELD(activation_bits)
+        .set_default(1)
+        .describe("Number of bits to quantize activation with.");
+    TVM_ATTR_FIELD(weight_bits)
+        .set_default(1)
+        .describe("Number of bits to quantize weights with.");
+    TVM_ATTR_FIELD(pack_dtype)
+        .set_default(NullValue<DataType>())
+        .describe("What data type individual bits should be packed into.");
+    TVM_ATTR_FIELD(unipolar)
+        .set_default(true)
+        .describe("Whether to use unipolar or bipolar activation quantization.");
   }
 };
 

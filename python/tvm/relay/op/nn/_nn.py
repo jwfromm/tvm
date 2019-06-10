@@ -107,6 +107,7 @@ def compute_conv2d(attrs, inputs, out_type, target):
     groups = attrs.groups
     layout = attrs.data_layout
     kernel_layout = attrs.kernel_layout
+    binarize = attrs.binarize
     out_dtype = attrs.out_dtype
     out_dtype = (inputs[0].dtype if out_dtype in ("same", "")
                  else out_dtype)
@@ -116,7 +117,11 @@ def compute_conv2d(attrs, inputs, out_type, target):
     if dilation_h < 1 or dilation_w < 1:
         raise ValueError("dilation should be positive value")
 
-    if groups == 1:
+    if binarize:
+        out = topi.nn.bitserial_conv2d_nchw(
+            inputs[0], inputs[1], strides, padding, attrs.activation_bits,
+            attrs.weight_bits, attrs.pack_dtype, out_dtype, attrs.unipolar)
+    elif groups == 1:
         out = topi.nn.conv2d(
             inputs[0], inputs[1], strides, padding,
             dilation, layout, out_dtype=out_dtype)

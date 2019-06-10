@@ -445,6 +445,7 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
         msg = 'Padding with {} is not supported for operator Convolution ' \
               'in frontend Keras.'
         raise tvm.error.OpAttributeUnimplemented(msg.format(keras_layer.padding))
+    params['binarize'] = True
     out = _op.nn.conv2d(data=inexpr, **params)
     if keras_layer.use_bias:
         bias = etab.new_const(weightList[1])
