@@ -36,7 +36,7 @@ def conv2d(data,
            binarize=False,
            activation_bits=1,
            weight_bits=1,
-           pack_dtype='uint16',
+           pack_dtype='uint32',
            unipolar=True):
     r"""2D convolution.
 

@@ -406,6 +406,8 @@ def _convert_enter_integer(inexpr, keras_layer, etab):
     # Now quantize input
     inexpr = _op.clip(inexpr, a_min=0., a_max=1.)
     inexpr = _op.round(bit_range * inexpr)
+    # Finally cast as proper datatype.
+    inexpr = _op.cast(inexpr, 'int16')
     return inexpr
 
 
@@ -414,7 +416,12 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
     weightList = keras_layer.get_weights()
     kernel_h, kernel_w, in_channels, n_filters = weightList[0].shape
     weight = weightList[0].transpose([3, 2, 0, 1])
+    # Apply weight quantization.
+    bit_range = 2.0**(keras_layer.bits - 1)
+    weight = np.clip(weight, -1, 1)
+    weight = np.round(weight * bit_range)
     dilation = [1, 1]
+
     if isinstance(keras_layer.dilation_rate, (list, tuple)):
         dilation = [keras_layer.dilation_rate[0], keras_layer.dilation_rate[1]]
     else:
@@ -422,7 +429,7 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
     dilated_kernel_h = (kernel_h - 1) * dilation[0] + 1
     dilated_kernel_w = (kernel_w - 1) * dilation[1] + 1
     stride_h, stride_w = keras_layer.strides
-    params = {'weight': etab.new_const(weight),
+    params = {'weight': _op.cast(etab.new_const(weight), 'int16'),
               'kernel_size': [kernel_h, kernel_w],
               'strides': [stride_h, stride_w],
               'dilation': dilation,
@@ -445,7 +452,11 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
         msg = 'Padding with {} is not supported for operator Convolution ' \
               'in frontend Keras.'
         raise tvm.error.OpAttributeUnimplemented(msg.format(keras_layer.padding))
+    # Set proper quantization parameters.
     params['binarize'] = True
+    params['activation_bits'] = keras_layer.bits
+    params['weight_bits'] = 1
+    params['out_dtype'] = 'int16'
     out = _op.nn.conv2d(data=inexpr, **params)
     if keras_layer.use_bias:
         bias = etab.new_const(weightList[1])
@@ -458,6 +469,8 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
 
 
 def _convert_bitserial_dense(inexpr, keras_layer, etab):
+    # Temporarily skip.
+    inexpr = _op.cast(inexpr, 'float32')
     weightList = keras_layer.get_weights()
     weight = etab.new_const(weightList[0].transpose([1, 0]))
     params = {'weight':weight, 'units':weightList[0].shape[1]}
@@ -475,6 +488,8 @@ def _convert_bitserial_dense(inexpr, keras_layer, etab):
 
 
 def _convert_shiftnorm(inexpr, keras_layer, etab):
+    # Temporarily skip.
+    return inexpr
     params = {'scale': False,
               'center': False,
               'epsilon': keras_layer.epsilon}
