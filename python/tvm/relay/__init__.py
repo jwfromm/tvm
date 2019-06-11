@@ -47,6 +47,7 @@ from . import image
 from . import frontend
 from . import backend
 from . import quantize
+from . import waveone
 
 from .scope_builder import ScopeBuilder
 
