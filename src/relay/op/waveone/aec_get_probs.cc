@@ -29,14 +29,14 @@ bool AecGetProbsRel(const Array<Type>& types,
 
 Expr MakeAecGetProbs(Expr bitplanes,
                      Expr feature_probs) {
-  static const Op& op = Op::Get("aec_get_probs");
+  static const Op& op = Op::Get("waveone.aec_get_probs");
   return CallNode::make(op, {bitplanes, feature_probs}, Attrs(), {});
 }
 
-TVM_REGISTER_API("relay.op._make.aec_get_probs")
+TVM_REGISTER_API("relay.op.waveone._make.aec_get_probs")
 .set_body_typed(MakeAecGetProbs);
 
-RELAY_REGISTER_OP("aec_get_probs")
+RELAY_REGISTER_OP("waveone.aec_get_probs")
 .describe(R"doc(Returns the likelihood of each bit
 given incoming bitplanes and a prior distribution.
 )doc" TVM_ADD_FILELINE)

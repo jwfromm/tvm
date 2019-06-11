@@ -4,7 +4,7 @@ from .. import op as reg
 from ..op import OpPattern, schedule_injective
 
 # aec_get_probs
-@reg.register_schedule("wavone.aec_get_probs")
+@reg.register_schedule("waveone.aec_get_probs")
 def schedule_aec_get_probs(_, outputs, target):
     with target:
         return topi.generic.schedule_aec_get_probs(outputs)
@@ -13,4 +13,4 @@ def schedule_aec_get_probs(_, outputs, target):
 def compute_aec_get_probs(attrs, inputs, out_dtype, target):
     return [topi.waveone.aec_get_probs(inputs[0], inputs[1])]
 
-reg.register_pattern("wavone.aec_get_probs", OpPattern.OPAQUE)
+reg.register_pattern("waveone.aec_get_probs", OpPattern.OPAQUE)
