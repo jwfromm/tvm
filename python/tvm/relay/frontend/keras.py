@@ -406,6 +406,7 @@ def _convert_enter_integer(inexpr, keras_layer, etab):
     # Now quantize input
     inexpr = _op.clip(inexpr, a_min=0., a_max=1.)
     inexpr = _op.round(bit_range * inexpr)
+    inexpr = _op.cast(inexpr, 'int16')
     return inexpr
 
 
@@ -422,10 +423,13 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
     dilated_kernel_h = (kernel_h - 1) * dilation[0] + 1
     dilated_kernel_w = (kernel_w - 1) * dilation[1] + 1
     stride_h, stride_w = keras_layer.strides
-    params = {'weight': etab.new_const(weight),
+    # Quantize and bitpack weights.
+    weight = (weight > 0).astype('int16')
+    weight = _op.cast(etab.new_const(weight), 'int16')
+    q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=0)
+    params = {'weight': q_weight,
               'kernel_size': [kernel_h, kernel_w],
               'strides': [stride_h, stride_w],
-              'dilation': dilation,
               'padding': [0, 0]}
     params['channels'] = n_filters
     if keras_layer.padding == 'valid':
@@ -445,7 +449,7 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
         msg = 'Padding with {} is not supported for operator Convolution ' \
               'in frontend Keras.'
         raise tvm.error.OpAttributeUnimplemented(msg.format(keras_layer.padding))
-    out = _op.nn.conv2d(data=inexpr, **params)
+    out = _op.nn.bitserial_conv2d(data=inexpr, **params)
     if keras_layer.use_bias:
         bias = etab.new_const(weightList[1])
         out = _op.nn.bias_add(out, bias)
@@ -457,6 +461,8 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
 
 
 def _convert_bitserial_dense(inexpr, keras_layer, etab):
+    # For now cast to float. Write full relay op later.
+    inexpr = _op.cast(inexpr, 'float32')
     weightList = keras_layer.get_weights()
     weight = etab.new_const(weightList[0].transpose([1, 0]))
     params = {'weight':weight, 'units':weightList[0].shape[1]}
@@ -474,6 +480,8 @@ def _convert_bitserial_dense(inexpr, keras_layer, etab):
 
 
 def _convert_shiftnorm(inexpr, keras_layer, etab):
+    # Ignore for now, need to quantize later.
+    return inexpr
     params = {'scale': False,
               'center': False,
               'epsilon': keras_layer.epsilon}
@@ -506,7 +514,7 @@ def _convert_shiftnorm(inexpr, keras_layer, etab):
 
 def _convert_scalu(inexpr, keras_layer, etab):
     scale = etab.new_const(keras_layer.get_weights()[0])
-    return inexpr * scale
+    return _op.cast(inexpr, 'float32') * scale
 
 
 def _convert_batchnorm(inexpr, keras_layer, etab):
