@@ -461,14 +461,16 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
 
 
 def _convert_bitserial_dense(inexpr, keras_layer, etab):
-    # For now cast to float. Write full relay op later.
-    inexpr = _op.cast(inexpr, 'float32')
     weightList = keras_layer.get_weights()
-    weight = etab.new_const(weightList[0].transpose([1, 0]))
-    params = {'weight':weight, 'units':weightList[0].shape[1]}
+    # Quantize and pack weight.
+    weight = weightList[0].transpose([1, 0])
+    weight = (weight > 0).astype('int16')
+    weight = _op.cast(etab.new_const(weight), 'int16')
+    q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=1)
+    params = {'weight':q_weight, 'units':weightList[0].shape[1]}
     input_shape = keras_layer.input_shape
     input_dim = len(input_shape)
-    out = _op.nn.dense(data=inexpr, **params)
+    out = _op.nn.bitserial_dense(data=inexpr, **params)
     if keras_layer.use_bias:
         bias = etab.new_const(weightList[1])
         out = _op.nn.bias_add(out, bias)
