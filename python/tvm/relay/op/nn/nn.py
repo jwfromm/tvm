@@ -1246,7 +1246,7 @@ def bitserial_conv2d(data,
                      pack_dtype='uint32',
                      out_dtype='int16',
                      unipolar=True):
-    r"""Tensor packing for bitserial operations.
+    r"""2D convolution using bitserial computation.
 
     Parameters
     ----------
