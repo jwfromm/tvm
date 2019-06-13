@@ -11,6 +11,20 @@ def schedule_aec_get_probs(_, outputs, target):
 
 @reg.register_compute("waveone.aec_get_probs")
 def compute_aec_get_probs(attrs, inputs, out_dtype, target):
-    return [topi.waveone.aec_get_probs(inputs[0], inputs[1])]
+    with target:
+        return [topi.waveone.aec_get_probs(inputs[0], inputs[1])]
 
 reg.register_pattern("waveone.aec_get_probs", OpPattern.OPAQUE)
+
+# aec_encode
+@reg.register_schedule("waveone.aec_encode")
+def schedule_aec_encode(_, outputs, target):
+    with target:
+        return topi.generic.schedule_aec_encode(outputs)
+
+@reg.register_compute("waveone.aec_encode")
+def compute_aec_encode(attrs, inputs, out_dtype, target):
+    with target:
+        return [topi.waveone.aec_encode(inputs[0], inputs[1])]
+
+reg.register_pattern("waveone.aec_encode", OpPattern.OPAQUE)

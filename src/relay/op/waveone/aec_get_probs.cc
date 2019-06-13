@@ -42,7 +42,9 @@ given incoming bitplanes and a prior distribution.
 )doc" TVM_ADD_FILELINE)
 .set_num_inputs(2)
 .add_argument("bitplanes", "Tensor", "Decomposed bit values.")
+.add_argument("feature_probs", "Tensor", "Prior likelhood of pixels.")
 .set_support_level(6)
 .add_type_rel("AecGetProbs", AecGetProbsRel);
+
 }  // namespace relay
 }
