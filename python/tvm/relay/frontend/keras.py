@@ -430,7 +430,9 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
     params = {'weight': q_weight,
               'kernel_size': [kernel_h, kernel_w],
               'strides': [stride_h, stride_w],
-              'padding': [0, 0]}
+              'padding': [0, 0],
+              'activation_bits': keras_layer.bits,
+              'weight_bits': 1}
     params['channels'] = n_filters
     if keras_layer.padding == 'valid':
         pass
@@ -467,7 +469,12 @@ def _convert_bitserial_dense(inexpr, keras_layer, etab):
     weight = (weight > 0).astype('int16')
     weight = _op.cast(etab.new_const(weight), 'int16')
     q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=1)
-    params = {'weight':q_weight, 'units':weightList[0].shape[1]}
+    params = {
+        'weight': q_weight,
+        'units': weightList[0].shape[1],
+        'data_bits': keras_layer.bits,
+        'weight_bits': 1
+    }
     input_shape = keras_layer.input_shape
     input_dim = len(input_shape)
     out = _op.nn.bitserial_dense(data=inexpr, **params)
@@ -884,7 +891,16 @@ def from_keras(model, shape=None):
                     inexpr.append(expr)
                 if len(inexpr) == 1:
                     inexpr = inexpr[0]
-                keras_op_to_relay(inexpr, keras_layer, keras_layer.output.name, etab)
+
+                # In tf 2.0 outputs go through layerless identity nodes. Check if if thats the case here
+                # and name appropriately.
+                op_name = keras_layer.output.name
+                for c in keras_layer.output.consumers():
+                    for o in c.outputs:
+                        if o in model.outputs:
+                            op_name = o.name
+                # Add the op to our graph.
+                keras_op_to_relay(inexpr, keras_layer, op_name, etab)
     # model._output_coordinates contains out_node(oc[0]), node_index(oc[1]) and tensor_index(oc[2])
     # Get all output nodes in etab using the name made from above values.
     # The out exprs were added to etab in keras_op_to_relay using this name.
