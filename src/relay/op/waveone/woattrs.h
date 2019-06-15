@@ -18,6 +18,21 @@ struct AecRangeEncodeGaussianAttrs : public tvm::AttrsNode<AecRangeEncodeGaussia
   }
 };
 
+/*! \brief Add aec split attributes. */
+struct AecSplitAttrs : public tvm::AttrsNode<AecRangeEncodeGaussianAttrs> {
+  Array<IndexExpr> input_dims;
+  Array<IndexExpr> aec_params;
+
+  TVM_DECLARE_ATTRS(AecSplitAttrs, "relay.attrs.AecSplitAttrs") {
+    TVM_ATTR_FIELD(input_dims)
+      .set_default(nullptr)
+      .describe("Height and width of input tensor.");
+    TVM_ATTR_FIELD(aec_params)
+      .set_default(nullptr)
+      .describe("Information about codelayers.");
+  }
+};
+
 }  // namespace relay
 }  // namespace tvm
 #endif  // TVM_RELAY_ATTRS_WO_H_
