@@ -27,4 +27,4 @@ def aec_encode(bitplanes, aec_probs):
         dtype=['uint8', 'int32'],
         name='aec_encode')
 
-    return aec_encoded, aec_codelen
+    return [aec_encoded, aec_codelen]

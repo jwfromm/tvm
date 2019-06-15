@@ -8,7 +8,7 @@ bool AecEncodeRel(const Array<Type>& types,
                   const Attrs& attrs,
                   const TypeReporter& reporter) {
 
-  CHECK_EQ(types.size(), 4);
+  CHECK_EQ(types.size(), 3);
   const auto* bitplanes = types[0].as<TensorTypeNode>();
   const auto* aec_probs = types[1].as<TensorTypeNode>();
   if (bitplanes == nullptr) {
@@ -18,14 +18,15 @@ bool AecEncodeRel(const Array<Type>& types,
     return false;
   }
   if (aec_probs == nullptr) {
-    CHECK(types[0].as<IncompleteTypeNode>())
+    CHECK(types[1].as<IncompleteTypeNode>())
     << "AECEncode: Expect aec_probs to be TensorType but get "
-    << types[0];
+    << types[1];
     return false;
   }
-  reporter->Assign(types[2], TensorTypeNode::make(bitplanes->shape, UInt(8)));
   Array<IndexExpr> codelen_shape({1});
-  reporter->Assign(types[3], TensorTypeNode::make(codelen_shape, Int(32)));
+  auto aec_encoded_ty = TensorTypeNode::make(bitplanes->shape, UInt(8));
+  auto aec_codelen_ty = TensorTypeNode::make(codelen_shape, Int(32));
+  reporter->Assign(types[2], TupleTypeNode::make({aec_encoded_ty, aec_codelen_ty}));
   return true;
 }
 
@@ -47,5 +48,5 @@ likelihood of each positional value.)doc" TVM_ADD_FILELINE)
 .set_support_level(6)
 .add_type_rel("AecEncode", AecEncodeRel);
 
-}  // namespace relay
-}
+} // namespace relay
+} // namespace tvm
