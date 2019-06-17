@@ -78,3 +78,18 @@ def compute_aec_split(attrs, inputs, out_dtype, target):
         return out
 
 reg.register_pattern("waveone.aec_split", OpPattern.OPAQUE)
+
+
+#aec_decode
+@reg.register_schedule("waveone.aec_decode")
+def schedule_aec_decode(attrs, outputs, target):
+    with target:
+        return topi.generic.schedule_aec_decode(outputs)
+
+@reg.register_compute("waveone.aec_decode")
+def compute_aec_decode(attrs, inputs, out_dtype, target):
+    with target:
+        out = topi.waveone.aec_decode(inputs[0], inputs[1])
+        return [out]
+
+reg.register_pattern("waveone.aec_decode", OpPattern.OPAQUE)

@@ -20,3 +20,6 @@ def aec_split(merged_code, merged_codelen, input_dims, aec_params, output_shapes
     num_aec = len(output_shapes)
     out = _make.aec_split(merged_code, merged_codelen, input_dims, aec_params, output_shapes)
     return TupleWrapper(out, num_aec)
+
+def aec_decode(encoded, feature_probs):
+    return _make.aec_decode(encoded, feature_probs)
