@@ -40,16 +40,15 @@ bool AecSplitRel(const Array<Type>& types,
     return false;
   }
   const AecSplitAttrs* param = attrs.as<AecSplitAttrs>();
-  Array<IndexExpr> output_shapes = param->output_shapes;
+  Array<Array<IndexExpr>> output_shapes = param->output_shapes;
   // Make sure each output shape has 5 dimensions.
-  CHECK_EQ(output_shapes.size() % 5, 0);
-  int num_aecs = output_shapes.size() / 5;
+  int num_aecs = output_shapes.size();
 
   Array<Type> output_types;
   for (uint16_t i = 0; i < num_aecs; ++i) {
     Array<IndexExpr> output_shape;
-    for (uint16_t n = 0; n < 5; ++n) {
-      output_shape.push_back(output_shapes[5*i + n]);
+    for (uint16_t n = 0; n < output_shapes[i].size(); ++n) {
+      output_shape.push_back(output_shapes[i][n]);
     }
     output_types.push_back(TensorTypeNode::make(output_shape, UInt(8)));
   }
@@ -63,7 +62,7 @@ Expr MakeAecSplit(Expr merged_code,
                   Expr merged_codelen,
                   Expr input_dims,
                   Expr aec_params,
-                  Array<IndexExpr> output_shapes) {
+                  Array<Array<IndexExpr>> output_shapes) {
   auto attrs = make_node<AecSplitAttrs>();
   attrs->output_shapes = output_shapes;
   static const Op& op = Op::Get("waveone.aec_split");

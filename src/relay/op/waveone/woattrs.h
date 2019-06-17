@@ -20,11 +20,11 @@ struct AecRangeEncodeGaussianAttrs : public tvm::AttrsNode<AecRangeEncodeGaussia
 
 /*! \brief Add aec split attributes. */
 struct AecSplitAttrs : public tvm::AttrsNode<AecSplitAttrs> {
-  Array<IndexExpr> output_shapes;
+  Array<Array<IndexExpr>> output_shapes;
 
   TVM_DECLARE_ATTRS(AecSplitAttrs, "relay.attrs.AecSplitAttrs") {
     TVM_ATTR_FIELD(output_shapes)
-      .set_default(NullValue<Array<IndexExpr> >())
+      .set_default(NullValue<Array<Array<IndexExpr> > >())
       .describe("List of output shape for each outbound AEC.");
   }
 };
