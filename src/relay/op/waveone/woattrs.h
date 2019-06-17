@@ -29,6 +29,17 @@ struct AecSplitAttrs : public tvm::AttrsNode<AecSplitAttrs> {
   }
 };
 
+/*! \brief Add range encode gaussian attributes. */
+struct AecRangeDecodeGaussianAttrs : public tvm::AttrsNode<AecRangeDecodeGaussianAttrs> {
+  bool serialize;
+
+  TVM_DECLARE_ATTRS(AecRangeDecodeGaussianAttrs, "relay.attrs.AecRangeDecodeGaussianAttrs") {
+    TVM_ATTR_FIELD(serialize)
+      .set_default(false)
+      .describe("Whether output should be serialized or not.");
+  }
+};
+
 }  // namespace relay
 }  // namespace tvm
 #endif  // TVM_RELAY_ATTRS_WO_H_

@@ -23,3 +23,7 @@ def aec_split(merged_code, merged_codelen, input_dims, aec_params, output_shapes
 
 def aec_decode(encoded, feature_probs):
     return _make.aec_decode(encoded, feature_probs)
+
+def aec_range_decode_gaussian(gauss_encoded, anorm, div_anorm, lookup, serialize=False):
+    return _make.aec_range_decode_gaussian(gauss_encoded, anorm, div_anorm, lookup, serialize)
+

@@ -16,7 +16,7 @@ def aec_range_encode_gaussian(quantized, anorm, lookup, serialize=False):
     lookup: tvm.Tensor
         Lookup table for gaussian CDF values.
 
-    Serialize: bool
+    serialize: bool
         Whether to serialize output or not.
 
     Returns
