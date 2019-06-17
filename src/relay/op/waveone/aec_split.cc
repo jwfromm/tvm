@@ -9,8 +9,8 @@ bool AecSplitRel(const Array<Type>& types,
                  int num_inputs,
                  const Attrs& attrs,
                  const TypeReporter& reporter) {
-  // types: {merged_code, merged_codelen, output}
-  CHECK_EQ(types.size(), 3);
+  // types: {merged_code, merged_codelen, input_dims, aec_params, output}
+  CHECK_EQ(types.size(), 5);
   const auto* merged_code = types[0].as<TensorTypeNode>();
   if (merged_code == nullptr) {
     CHECK(types[0].as<IncompleteTypeNode>())
@@ -25,29 +25,64 @@ bool AecSplitRel(const Array<Type>& types,
     << types[1];
     return false;
   }
-  IndexExpr N = merged_code->shape[0];
+  const auto* input_dims = types[2].as<TensorTypeNode>();
+  if (input_dims == nullptr) {
+    CHECK(types[2].as<IncompleteTypeNode>())
+    << "AECSplit: Expect input_dims to be TensorType but get "
+    << types[2];
+    return false;
+  }
+  const auto* aec_params = types[3].as<TensorTypeNode>();
+  if (aec_params == nullptr) {
+    CHECK(types[3].as<IncompleteTypeNode>())
+    << "AECSplit: Expect aec_params to be TensorType but get "
+    << types[3];
+    return false;
+  }
   const AecSplitAttrs* param = attrs.as<AecSplitAttrs>();
-  Array<IndexExpr> input_dims = param->input_dims;
-  CHECK_EQ(input_dims.size(), 2);
-  Array<IndexExpr> aec_params = param->aec_params;
-  CHECK_EQ(aec_params.size() % 3, 0);
+  Array<IndexExpr> output_shapes = param->output_shapes;
+  // Make sure each output shape has 5 dimensions.
+  CHECK_EQ(output_shapes.size() % 5, 0);
+  int num_aecs = output_shapes.size() / 5;
 
   Array<Type> output_types;
-  IndexExpr H = input_dims[0];
-  IndexExpr W = input_dims[1];
-  int num_outputs = aec_params.size() / 3;
-  for (int i = 0; i < num_outputs; ++i) {
-    int aec_param_idx = 3 * i;
-    IndexExpr ratio = aec_params[aec_param_idx];
-    IndexExpr channels = aec_params[aec_param_idx + 1];
-    IndexExpr bitplanes = aec_params[aec_param_idx + 2];
-    Array<IndexExpr> output_shape({N, channels, H / ratio, W / ratio});
-    output_types.push_back(TensorTypeNode::make(output_shape, UInt(8)));
+  for (uint16_t i = 0; i < num_aecs; ++i) {
+    Array<IndexExpr> output_shape;
+    for (uint16_t n = 0; n < 5; ++n) {
+      output_shape.push_back(output_shapes[5*i + n]);
     }
+    output_types.push_back(TensorTypeNode::make(output_shape, UInt(8)));
+  }
+
   TupleType output_tuple = TupleTypeNode::make(output_types);
-  reporter->Assign(types[2], output_tuple);
+  reporter->Assign(types[4], output_tuple);
   return true;
 }
+
+Expr MakeAecSplit(Expr merged_code,
+                  Expr merged_codelen,
+                  Expr input_dims,
+                  Expr aec_params,
+                  Array<IndexExpr> output_shapes) {
+  auto attrs = make_node<AecSplitAttrs>();
+  attrs->output_shapes = output_shapes;
+  static const Op& op = Op::Get("waveone.aec_split");
+  return CallNode::make(op, {merged_code, merged_codelen, input_dims, aec_params}, Attrs(attrs), {});
+}
+
+TVM_REGISTER_API("relay.op.waveone._make.aec_split")
+.set_body_typed(MakeAecSplit);
+
+RELAY_REGISTER_OP("waveone.aec_split")
+.describe(R"doc(Splits a merged code and codelen into components.)doc" TVM_ADD_FILELINE)
+.set_num_inputs(4)
+.add_argument("merged_code", "Tensor", "Incoming merged code.")
+.add_argument("merged_codelen", "Tensor", "Length of merged code.")
+.add_argument("input_dims", "Tensor", "Height and width of input image.")
+.add_argument("aec_params", "Tensor", "Description of outbound AECs.")
+.add_argument("output_shapes", "Array", "List of output shapes for each outbound AEC.")
+.set_support_level(6)
+.add_type_rel("AecSplit", AecSplitRel);
 
 } // namespace relay
 } // namespace tvm

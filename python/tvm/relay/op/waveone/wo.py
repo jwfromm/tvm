@@ -15,3 +15,8 @@ def aec_range_encode_gaussian(quantized, anorm, lookup, serialize=False):
 def aec_merge(data_tuple):
     out = _make.aec_merge(data_tuple)
     return TupleWrapper(out, 2)
+
+def aec_split(merged_code, merged_codelen, input_dims, aec_params, output_shapes):
+    num_aec = len(output_shapes)
+    out = _make.aec_split(merged_code, merged_codelen, input_dims, aec_params, output_shapes)
+    return TupleWrapper(out, num_aec)

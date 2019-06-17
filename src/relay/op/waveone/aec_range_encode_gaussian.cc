@@ -55,6 +55,7 @@ likelihood distribution.)doc" TVM_ADD_FILELINE)
 .add_argument("quantized", "Tensor", "Incoming quantized values.")
 .add_argument("anorm", "Tensor", "Normalized incoming features.")
 .add_argument("lookup", "Tensor", "Lookup table of cdf values.")
+.add_argument("serialize", "bool, optional", "Whether to serialize output.")
 .set_support_level(6)
 .add_type_rel("AecRangeEncodeGaussian", AecRangeEncodeGaussianRel);
 

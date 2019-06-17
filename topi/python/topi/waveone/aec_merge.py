@@ -11,11 +11,11 @@ def get_aec_merge_output_size(aec_inputs):
 
 @tvm.target.generic_func
 def aec_merge(data_tuple):
-    """ Encodes incoming bit features.
+    """ Merges codes of multiple AECs.
 
     Parameters
     ----------
-    data_tuple: Tuple of tvm.Tensor
+    data_tuple : Tuple of tvm.Tensor
         Set of incoming aec features followed by corresponding codelengths.
 
     Returns

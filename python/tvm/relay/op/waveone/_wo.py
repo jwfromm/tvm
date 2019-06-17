@@ -40,6 +40,7 @@ def schedule_aec_range_encode_gaussian(attrs, outputs, target):
 
 @reg.register_compute("waveone.aec_range_encode_gaussian")
 def compute_aec_range_encode_gaussian(attrs, inputs, out_dtype, target):
+    print(dir(attrs))
     with target:
         out = topi.waveone.aec_range_encode_gaussian(inputs[0], inputs[1], inputs[2], serialize=attrs.serialize)
         out = out if isinstance(out, list) else [out]
@@ -62,3 +63,20 @@ def compute_aec_merge(attrs, inputs, out_dtype, target):
         return out
 
 reg.register_pattern("waveone.aec_merge", OpPattern.OPAQUE)
+
+
+#aec_split
+@reg.register_schedule("waveone.aec_split")
+def schedule_aec_split(attrs, outputs, target):
+    with target:
+        return topi.generic.schedule_aec_split(outputs)
+
+@reg.register_compute("waveone.aec_split")
+def compute_aec_split(attrs, inputs, out_dtype, target):
+    print(dir(attrs))
+    with target:
+        out = topi.waveone.aec_split(inputs[0], inputs[1], inputs[2], inputs[3], output_shapes=attrs.output_shapes)
+        out = out if isinstance(out, list) else [out]
+        return out
+
+reg.register_pattern("waveone.aec_split", OpPattern.OPAQUE)
