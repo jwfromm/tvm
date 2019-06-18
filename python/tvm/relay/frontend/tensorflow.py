@@ -271,6 +271,74 @@ def _argx(func, func_name):
         return func(inputs[0], axis=axis_input_value, keepdims=False)
     return _impl
 
+def _quantize():
+    def _impl(inputs, attr, params):
+        bpu = attr['B']
+        dtype = attr['T'].name
+        q = 2.**(bpu - 1)
+        one_div_q = 1 / q
+        quantized = tvm.relay.const(one_div_q, dtype) * _op.ceil(tvm.relay.const(q, dtype) * inputs[0])
+        quantized = _op.clip(quantized, -1. + one_div_q, 1.)
+        return quantized
+
+    return _impl
+
+def _aec_get_probs():
+    def _impl(inputs, attr, params):
+        bitplanes = inputs[0]
+        feature_probs = inputs.pop(1)
+        return _op.waveone.aec_get_probs(bitplanes, feature_probs)
+
+    return _impl
+
+def _aec_encode():
+    def _impl(inputs, attr, params):
+        bitplanes = inputs[0]
+        aec_probs = inputs[1]
+        return _op.waveone.aec_encode(bitplanes, aec_probs)
+    return _impl
+
+def _aec_range_encode_gaussian():
+    def _impl(inputs, attr, params):
+        quantized = inputs[0]
+        anorm = inputs[1]
+        lookup = inputs.pop(2)
+        serialize = attr['serialize']
+        return _op.waveone.aec_range_encode_gaussian(quantized, anorm, lookup, serialize=serialize)
+
+    return _impl
+
+def _aec_merge():
+    def _impl(inputs, attr, params):
+        data_tuple = _expr.Tuple(inputs)
+        return _op.waveone.aec_merge(data_tuple)
+
+    return _impl
+
+def _bitplane_decomposition():
+    def _impl(inputs, attr, params):
+        bpu = attr['B']
+        dtype = attr['T'].name
+        powb_np = 2.**(-bpu + 1.)
+        powb = tvm.relay.const(powb_np, dtype)
+        shift = tvm.relay.const(-1. + powb_np, dtype)
+        bitplanes = []
+        sign1m1 = _op.sign(inputs[0])
+        sign = (sign1m1 * tvm.relay.const(.5, dtype)) + tvm.relay.const(.5, dtype)
+        x = inputs[0] - (powb * sign)
+        x *= sign1m1
+        for b in range(bpu - 1):
+            x = tvm.relay.const(2., dtype) * x + shift
+            remainder = _op.cast(_op.greater(x, tvm.relay.const(0., dtype)), dtype)
+            x -= (shift + remainder)
+            bitplanes.append(_op.cast(remainder, 'uint8'))
+        bitplanes.append(_op.cast(sign, 'uint8'))
+        bitplanes = _op.stack(bitplanes, axis=-1)
+
+        return bitplanes
+
+    return _impl
+
 def _bitplane_composition():
     def _impl(inputs, attr, params):
         print("Bitplane composition not implemented yet.")
@@ -799,9 +867,14 @@ def _fill():
     def _impl(inputs, attr, params):
         output_shape = attr['_output_shapes'][0]
         # Output shape must be defined to avoid errors. If any axis is not, we must
-        # try to compute its shape.
+        # try to find or compute its shape.
         if -1 in output_shape:
-            output_shape = _infer_value(inputs[0], params).asnumpy().reshape([-1]).tolist()
+            # First lets check if the input is a free variable in params.
+            if isinstance(inputs[0], _expr.Var):
+                output_shape = params[inputs[0].name_hint].asnumpy().reshape([-1]).tolist()
+            # Otherwise we'll have to infer its value.
+            else:
+                output_shape = _infer_value(inputs[0], params).asnumpy().reshape([-1]).tolist()
 
         fill_arg = _get_num_param(params, inputs.pop(1))
         dtype = attr['T'].name
@@ -977,7 +1050,7 @@ def _pad(name):
             attr['pad_value'] = constant_values
         return AttrCvt(
             op_name='pad',
-            ignores=['Tpaddings'],)(new_inputs, attr)
+            ignores=['Tpaddings', 'mode'],)(new_inputs, attr)
     return _impl
 
 def _transpose():
@@ -1262,12 +1335,19 @@ _identity_list = []
 # for 1 to N mapping(composed), use custom callable functions
 # for N to 1 mapping, currently not supported(?)
 _convert_map = {
+    'Quantize'                          : _quantize(),
+    'RightShift'                        : _identity(),
+    'BitplaneDecomposition'             : _bitplane_decomposition(),
+    'AECGetProbs'                       : _aec_get_probs(),
+    'AECEncode'                         : _aec_encode(),
+    'AECRangeEncodeGaussian'            : _aec_range_encode_gaussian(),
+    'AECMerge'                          : _aec_merge(),
     'BitplaneComposition'               : _bitplane_composition(),
     'AECDecode'                         : _aec_decode(),
     'AECSplit'                          : _aec_split(),
-    'MirrorPad'                         : _identity(),
+    'MirrorPad'                         : _pad('Pad'),
     'AECRangeDecodeGaussian'            : _identity(),
-    'Abs'                               : _elemwise('abs'),
+    'Abs'                               : AttrCvt('abs'),
     'Add'                               : _elemwise('add'),
     'All'                               : _reduce_all(),
     'ArgMax'                            : _argx(_op.argmax, 'argmax'),
