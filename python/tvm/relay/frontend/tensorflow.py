@@ -30,6 +30,7 @@ from topi.util import get_const_tuple
 from .. import ir_pass
 from .. import expr as _expr
 from .. import op as _op
+from .. import annotation as _annotation
 from ..expr_functor import ExprMutator
 
 __all__ = ['from_tensorflow']
@@ -268,6 +269,22 @@ def _argx(func, func_name):
             raise TypeError( \
                 "Unsupported argument for `{}` : `axis` should be a constant".format(func_name))
         return func(inputs[0], axis=axis_input_value, keepdims=False)
+    return _impl
+
+def _bitplane_composition():
+    def _impl(inputs, attr, params):
+        print("Bitplane composition not implemented yet.")
+        return inputs[0]
+    return _impl
+
+def _aec_split():
+    def _impl(inputs, attr, params):
+        print("AECSplit not implemented yet.")
+    return _impl
+
+def _aec_decode():
+    def _impl(inputs, attr, params):
+        print("AECDecode not implemented yet.")
     return _impl
 
 def _elemwise(name):
@@ -643,10 +660,48 @@ def _depth_to_space():
             new_w = in_w * block_size
             newshape = (in_n, new_c, new_h, new_w)
 
-        return AttrCvt(
+        return _annotation.stop_fusion(AttrCvt(
             op_name="reshape",
             extras={'newshape': newshape},
-            ignores=['data_format', 'block_size'])([transposed], attr)
+            ignores=['data_format', 'block_size'])([transposed], attr))
+
+    return _impl
+
+
+def _space_to_depth():
+    def _impl(inputs, attr, params):
+        # Need to handle data layouts differently.
+        input_shape = attr['_input_shapes'][inputs[0]]
+        block_size = int(attr['block_size'])
+        if attr['data_format'].decode("utf-8") == 'NHWC':
+            in_n, in_h, in_w, in_c = input_shape
+            new_h = int(in_h / block_size)
+            new_w = int(in_w / block_size)
+
+            # First expand input to larger dimension.
+            expanded = _op.reshape(
+                inputs[0], newshape=(in_n, new_h, block_size, new_w, block_size, in_c))
+            # Now reorder to expand spatial blocks.
+            transposed = _op.transpose(expanded, axes=(0, 1, 3, 2, 4, 5))
+            # Finally reshape to proper output.
+            new_c = in_c * block_size * block_size
+            newshape = (in_n, new_h, new_w, new_c)
+
+        else: # Handle NCHW layout
+            in_n, in_c, in_h, in_w = input_shape
+            new_h = int(in_h / block_size)
+            new_w = int(in_w / block_size)
+
+            expanded = _op.reshape(
+                inputs[0], newshape=(in_n, in_c, new_h, block_size, new_w, block_size))
+            transposed = _op.transpose(expanded, axes=(0, 3, 5, 1, 2, 4))
+            new_c = int(in_c * block_size * block_size)
+            newshape = (in_n, new_c, new_h, new_w)
+
+        return _annotation.stop_fusion(AttrCvt(
+            op_name="reshape",
+            extras={'newshape': newshape},
+            ignores=['data_format', 'block_size'])([transposed], attr))
 
     return _impl
 
@@ -1207,6 +1262,12 @@ _identity_list = []
 # for 1 to N mapping(composed), use custom callable functions
 # for N to 1 mapping, currently not supported(?)
 _convert_map = {
+    'BitplaneComposition'               : _bitplane_composition(),
+    'AECDecode'                         : _aec_decode(),
+    'AECSplit'                          : _aec_split(),
+    'MirrorPad'                         : _identity(),
+    'AECRangeDecodeGaussian'            : _identity(),
+    'Abs'                               : _elemwise('abs'),
     'Add'                               : _elemwise('add'),
     'All'                               : _reduce_all(),
     'ArgMax'                            : _argx(_op.argmax, 'argmax'),
@@ -1280,11 +1341,13 @@ _convert_map = {
     'Softmax'                           : _softmax(),
     'Softplus'                          : _softplus(),
     'SpaceToBatchND'                    : _space_to_batch_nd(),
+    'SpaceToDepth'                      : _space_to_depth(),
     'Split'                             : _split(False),
     'SplitV'                            : _split(True),
     'Sqrt'                              : AttrCvt('sqrt'),
     'Square'                            : _square(),
     'Squeeze'                           : _squeeze(),
+    'StopGradient'                      : _identity(),
     'StridedSlice'                      : _stridedSlice(),
     'Sub'                               : _elemwise('subtract'),
     'Sum'                               : _sum(),
