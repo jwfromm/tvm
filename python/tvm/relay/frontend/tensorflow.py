@@ -1050,7 +1050,20 @@ def _pad(name):
             attr['pad_value'] = constant_values
         return AttrCvt(
             op_name='pad',
-            ignores=['Tpaddings', 'mode'],)(new_inputs, attr)
+            ignores=['Tpaddings'],)(new_inputs, attr)
+    return _impl
+
+def _mirror_pad():
+    def _impl(inputs, attr, params):
+        padlist = _get_param(params, inputs[1])
+        paddings = tuple(tuple(l) for l in padlist)
+        attr['pad_width'] = paddings
+        mode = attr['mode'].decode('utf-8')
+        attr['mode'] = mode
+        new_inputs = [inputs[0]]
+        return AttrCvt(
+            op_name='mirror_pad',
+            ignores=['Tpaddings'],)(new_inputs, attr)
     return _impl
 
 def _transpose():
@@ -1345,7 +1358,7 @@ _convert_map = {
     'BitplaneComposition'               : _bitplane_composition(),
     'AECDecode'                         : _aec_decode(),
     'AECSplit'                          : _aec_split(),
-    'MirrorPad'                         : _pad('Pad'),
+    'MirrorPad'                         : _mirror_pad(),
     'AECRangeDecodeGaussian'            : _identity(),
     'Abs'                               : AttrCvt('abs'),
     'Add'                               : _elemwise('add'),
