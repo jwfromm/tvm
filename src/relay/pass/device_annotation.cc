@@ -490,8 +490,15 @@ class DeviceInfo {
 
   void FillPropagation(int out_dev_type) {
     for (const auto& it : post_visitor_.post_dfs_order_) {
-        Expr expr = GetRef<Expr>(it.first);
-        if (!it.second) device_map_.Set(expr, out_dev_type);
+      Expr expr = GetRef<Expr>(it.first);
+      if (!it.second) device_map_.Set(expr, out_dev_type);
+      if (const auto* call = expr.as<CallNode>()) {
+        for (const auto& arg : call->args) {
+          if (arg->is_type<VarNode>() || arg->is_type<ConstantNode>()) {
+            device_map_.Set(arg, device_map_[expr]);
+          }
+        }
+      }
     }
   }
 
