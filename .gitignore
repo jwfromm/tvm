@@ -1,3 +1,6 @@
+# Waveone files
+waveone
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -228,7 +231,3 @@ conda/pkg
 # nix files
 .envrc
 *.nix
-
-# antlr files
-*.tokens
-*.interp
