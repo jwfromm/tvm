@@ -31,6 +31,7 @@ from .. import analysis
 from .. import transform as _transform
 from .. import expr as _expr
 from .. import op as _op
+from .. import annotation as _annotation
 from ..expr_functor import ExprMutator
 from .. import module as _module
 
@@ -277,6 +278,149 @@ def _argx(func, func_name):
             raise TypeError( \
                 "Unsupported argument for `{}` : `axis` should be a constant".format(func_name))
         return func(inputs[0], axis=axis_input_value, keepdims=False)
+    return _impl
+
+def _quantize():
+    def _impl(inputs, attr, params):
+        bpu = attr['B']
+        dtype = attr['T'].name
+        q = 2.**(bpu - 1)
+        one_div_q = 1 / q
+        quantized = tvm.relay.const(one_div_q, dtype) * _op.ceil(tvm.relay.const(q, dtype) * inputs[0])
+        quantized = _op.clip(quantized, -1. + one_div_q, 1.)
+        return quantized
+
+    return _impl
+
+def _aec_get_probs():
+    def _impl(inputs, attr, params):
+        bitplanes = inputs[0]
+        feature_probs = inputs.pop(1)
+        return _op.waveone.aec_get_probs(bitplanes, feature_probs)
+
+    return _impl
+
+def _aec_encode():
+    def _impl(inputs, attr, params):
+        return _op.waveone.aec_encode(inputs[0], inputs[1])
+    return _impl
+
+def _aec_range_encode_gaussian():
+    def _impl(inputs, attr, params):
+        quantized = inputs[0]
+        anorm = inputs[1]
+        lookup = inputs.pop(2)
+        serialize = attr['serialize']
+        return _op.waveone.aec_range_encode_gaussian(quantized, anorm, lookup, serialize=serialize)
+
+    return _impl
+
+def _aec_range_decode_gaussian():
+    def _impl(inputs, attr, params):
+        gauss_encoded = inputs[0]
+        anorm = inputs[1]
+        div_anorm = inputs[2]
+        lookup = inputs.pop(3)
+        serialize = attr['serialize']
+        return _op.waveone.aec_range_decode_gaussian(gauss_encoded, anorm, div_anorm, lookup, serialize=serialize)
+    return _impl
+
+def _aec_merge():
+    def _impl(inputs, attr, params):
+        data_tuple = _expr.Tuple(inputs)
+        return _op.waveone.aec_merge(data_tuple)
+
+    return _impl
+
+def _bitplane_decomposition():
+    def _impl(inputs, attr, params):
+        bpu = attr['B']
+        dtype = attr['T'].name
+        powb_np = 2.**(-bpu + 1.)
+        powb = tvm.relay.const(powb_np, dtype)
+        shift = tvm.relay.const(-1. + powb_np, dtype)
+        bitplanes = []
+        sign1m1 = _op.sign(inputs[0])
+        sign = (sign1m1 * tvm.relay.const(.5, dtype)) + tvm.relay.const(.5, dtype)
+        x = inputs[0] - (powb * sign)
+        x *= sign1m1
+        for b in range(bpu - 1):
+            x = tvm.relay.const(2., dtype) * x + shift
+            remainder = _op.cast(_op.greater(x, tvm.relay.const(0., dtype)), dtype)
+            x -= (shift + remainder)
+            bitplanes.append(_op.cast(remainder, 'uint8'))
+        bitplanes.append(_op.cast(sign, 'uint8'))
+        bitplanes = _op.stack(bitplanes, axis=-1)
+
+        return bitplanes
+
+    return _impl
+
+def _bitplane_composition():
+    def _impl(inputs, attr, params):
+        # Extract bpu from shape.
+        bpu = attr['_input_shapes'][inputs[0]][-1]
+        powb = tvm.relay.const(2.**(-bpu + 1))
+        sign = _op.cast(_op.take(inputs[0], tvm.relay.const(bpu - 1), axis=-1),
+                        'float32')
+        sign1m1 = tvm.relay.const(2.) * sign - tvm.relay.const(1.)
+        x = tvm.relay.const(0.0)
+        for b in range(bpu - 1):
+            bit = _op.cast(
+                _op.take(inputs[0], tvm.relay.const(bpu - (b + 2)), axis=-1),
+                'float32')
+            x += bit
+            x *= tvm.relay.const(0.5)
+        x *= sign1m1
+        x += powb * sign
+        return x
+    return _impl
+
+def _aec_split():
+    def _impl(inputs, attr, params):
+        merged_code = inputs[0]
+        merged_codelen = inputs[1]
+        image_dims = inputs[2]
+        aec_params = inputs[3]
+
+        # Need to extract numpy values for input dims and aec_params
+        if isinstance(image_dims, _expr.Var):
+            image_dims_np = params[image_dims.name_hint].asnumpy()
+        # Otherwise we'll have to infer its value.
+        else:
+            image_dims_np = _infer_value(image_dims, params).asnumpy()
+
+        if isinstance(aec_params, _expr.Var):
+            aec_params_np = params[aec_params.name_hint].asnumpy()
+        else:
+            aec_params_np = _infer_value(aec_params, params).asnumpy()
+
+        # Compute output shapes.
+        def get_aec_shapes(image_dims, N, aec_params):
+            num_aec = aec_params.shape[0]
+            aec_shapes = []
+            for i in range(num_aec):
+                ratio, channels, bitplanes = aec_params[i]
+                output_shape = [
+                    N, channels,
+                    int(image_dims[0] / ratio),
+                    int(image_dims[1] / ratio)
+                ]
+                if bitplanes > 1:
+                    output_shape = output_shape + [bitplanes]
+                aec_shapes.append(output_shape)
+            return aec_shapes
+
+        N = attr['_input_shapes'][merged_code][0]
+        output_shapes = get_aec_shapes(image_dims_np, N, aec_params_np)
+
+        return _op.waveone.aec_split(merged_code, merged_codelen, image_dims, aec_params, output_shapes)
+
+    return _impl
+
+def _aec_decode():
+    def _impl(inputs, attr, params):
+        return _op.waveone.aec_decode(inputs[0], inputs[1])
     return _impl
 
 def _elemwise(name):
@@ -721,10 +865,48 @@ def _depth_to_space():
             new_w = in_w * block_size
             newshape = (in_n, new_c, new_h, new_w)
 
-        return AttrCvt(
+        return _annotation.stop_fusion(AttrCvt(
             op_name="reshape",
             extras={'newshape': newshape},
-            ignores=['data_format', 'block_size'])([transposed], attr)
+            ignores=['data_format', 'block_size'])([transposed], attr))
+
+    return _impl
+
+
+def _space_to_depth():
+    def _impl(inputs, attr, params):
+        # Need to handle data layouts differently.
+        input_shape = attr['_input_shapes'][inputs[0]]
+        block_size = int(attr['block_size'])
+        if attr['data_format'].decode("utf-8") == 'NHWC':
+            in_n, in_h, in_w, in_c = input_shape
+            new_h = int(in_h / block_size)
+            new_w = int(in_w / block_size)
+
+            # First expand input to larger dimension.
+            expanded = _op.reshape(
+                inputs[0], newshape=(in_n, new_h, block_size, new_w, block_size, in_c))
+            # Now reorder to expand spatial blocks.
+            transposed = _op.transpose(expanded, axes=(0, 1, 3, 2, 4, 5))
+            # Finally reshape to proper output.
+            new_c = in_c * block_size * block_size
+            newshape = (in_n, new_h, new_w, new_c)
+
+        else: # Handle NCHW layout
+            in_n, in_c, in_h, in_w = input_shape
+            new_h = int(in_h / block_size)
+            new_w = int(in_w / block_size)
+
+            expanded = _op.reshape(
+                inputs[0], newshape=(in_n, in_c, new_h, block_size, new_w, block_size))
+            transposed = _op.transpose(expanded, axes=(0, 3, 5, 1, 2, 4))
+            new_c = int(in_c * block_size * block_size)
+            newshape = (in_n, new_c, new_h, new_w)
+
+        return _annotation.stop_fusion(AttrCvt(
+            op_name="reshape",
+            extras={'newshape': newshape},
+            ignores=['data_format', 'block_size'])([transposed], attr))
 
     return _impl
 
@@ -822,9 +1004,14 @@ def _fill():
     def _impl(inputs, attr, params):
         output_shape = attr['_output_shapes'][0]
         # Output shape must be defined to avoid errors. If any axis is not, we must
-        # try to compute its shape.
+        # try to find or compute its shape.
         if -1 in output_shape:
-            output_shape = _infer_value(inputs[0], params).asnumpy().reshape([-1]).tolist()
+            # First lets check if the input is a free variable in params.
+            if isinstance(inputs[0], _expr.Var):
+                output_shape = params[inputs[0].name_hint].asnumpy().reshape([-1]).tolist()
+            # Otherwise we'll have to infer its value.
+            else:
+                output_shape = _infer_value(inputs[0], params).asnumpy().reshape([-1]).tolist()
 
         fill_arg = _get_num_param(params, inputs.pop(1))
         dtype = attr['T'].name
@@ -1008,6 +1195,19 @@ def _pad(name):
             attr['pad_value'] = constant_values
         return AttrCvt(
             op_name='pad',
+            ignores=['Tpaddings'],)(new_inputs, attr)
+    return _impl
+
+def _mirror_pad():
+    def _impl(inputs, attr, params):
+        padlist = _get_param(params, inputs[1])
+        paddings = tuple(tuple(l) for l in padlist)
+        attr['pad_width'] = paddings
+        mode = attr['mode'].decode('utf-8')
+        attr['mode'] = mode
+        new_inputs = [inputs[0]]
+        return AttrCvt(
+            op_name='mirror_pad',
             ignores=['Tpaddings'],)(new_inputs, attr)
     return _impl
 
@@ -1303,6 +1503,17 @@ _identity_list = []
 # for 1 to N mapping(composed), use custom callable functions
 # for N to 1 mapping, currently not supported(?)
 _convert_map = {
+    'AECGetProbs'                       : _aec_get_probs(),
+    'AECEncode'                         : _aec_encode(),
+    'AECDecode'                         : _aec_decode(),
+    'AECRangeEncodeGaussian'            : _aec_range_encode_gaussian(),
+    'AECRangeDecodeGaussian'            : _aec_range_decode_gaussian(),
+    'AECMerge'                          : _aec_merge(),
+    'AECSplit'                          : _aec_split(),
+    'Quantize'                          : _quantize(),
+    'BitplaneComposition'               : _bitplane_composition(),
+    'BitplaneDecomposition'             : _bitplane_decomposition(),
+    'MirrorPad'                         : _mirror_pad(),
     'Abs'                               : AttrCvt('abs'),
     'Add'                               : _elemwise('add'),
     'All'                               : _reduce('all'),
@@ -1388,11 +1599,13 @@ _convert_map = {
     'Softmax'                           : _softmax(),
     'Softplus'                          : _softplus(),
     'SpaceToBatchND'                    : _space_to_batch_nd(),
+    'SpaceToDepth'                      : _space_to_depth(),
     'Split'                             : _split(False),
     'SplitV'                            : _split(True),
     'Sqrt'                              : AttrCvt('sqrt'),
     'Square'                            : _square(),
     'Squeeze'                           : _squeeze(),
+    'StopGradient'                      : _identity(),
     'StridedSlice'                      : _stridedSlice(),
     'Sub'                               : _elemwise('subtract'),
     'Sum'                               : _sum(),
@@ -2036,9 +2249,11 @@ class GraphProto(object):
                 #graph node name.eg: Node name:- 'Model/RNN/cell_0/RnnCell', but the
                 #output name will be 'Model/RNN/cell_0/RnnCell:0'. In this case,
                 #the digit has to be ignored.
-                if ":" in node.input[0]:
-                    in_name, _ = node.input[0].split(':')
-                    node.input[0] = in_name
+
+                # I think this is undesirable for now. Maybe special case RNNs?
+                #if ":" in node.input[0]:
+                #    in_name, _ = node.input[0].split(':')
+                #    node.input[0] = in_name
 
                 # Fill shapes for all inputs in a list
                 inputs = []
