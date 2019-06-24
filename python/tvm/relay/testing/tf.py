@@ -70,7 +70,7 @@ def AddShapesToGraphDef(session, out_node):
     ----------
     session : tf.Session
         Tensorflow session
-    out_node : String
+    out_node : String or list of String
         Final output node of the graph.
 
     Returns
@@ -79,11 +79,11 @@ def AddShapesToGraphDef(session, out_node):
         tensorflow graph definition with shapes attribute added to nodes.
 
     """
-
+    out_node = out_node if isinstance(out_node, list) else [out_node]
     graph_def = tf.graph_util.convert_variables_to_constants(
         session,
         session.graph.as_graph_def(add_shapes=True),
-        [out_node],
+        out_node,
         )
     return graph_def
 

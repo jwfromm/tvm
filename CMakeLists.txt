@@ -131,7 +131,7 @@ file(GLOB COMPILER_SRCS
     src/schedule/*.cc
     )
 
-file(GLOB_RECURSE RELAY_SRCS
+file(GLOB_RECURSE RELAY_SRCS FOLLOW_SYMLINKS
     src/relay/*.cc
     )
 list(APPEND COMPILER_SRCS ${RELAY_SRCS})
