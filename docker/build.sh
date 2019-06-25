@@ -98,7 +98,7 @@ WORKSPACE="${WORKSPACE:-${SCRIPT_DIR}/../}"
 BUILD_TAG="${BUILD_TAG:-tvm}"
 
 # Determine the docker image name
-DOCKER_IMG_NAME="${BUILD_TAG}.${CONTAINER_TYPE}"
+DOCKER_IMG_NAME="jwfromm/${BUILD_TAG}.${CONTAINER_TYPE}"
 
 # Under Jenkins matrix build, the build tag may contain characters such as
 # commas (,) and equal signs (=), which are not valid inside docker image names.
@@ -135,7 +135,7 @@ echo "Running '${COMMAND[@]}' inside ${DOCKER_IMG_NAME}..."
 # and share the PID namespace (--pid=host) so the process inside does not have
 # pid 1 and SIGKILL is propagated to the process inside (jenkins can kill it).
 echo ${DOCKER_BINARY}
-${DOCKER_BINARY} run --rm --pid=host \
+echo ${DOCKER_BINARY} run --rm --pid=host \
     -v ${WORKSPACE}:/workspace \
     -w /workspace \
     -e "CI_BUILD_HOME=/workspace" \
