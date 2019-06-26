@@ -432,6 +432,7 @@ def _convert_enter_integer(inexpr, keras_layer, etab):
 
 
 def _convert_bitserial_convolution(inexpr, keras_layer, etab):
+    # TODO: currently hardcoded to rpi data types.
     _check_data_format(keras_layer)
     weightList = keras_layer.get_weights()
     kernel_h, kernel_w, in_channels, n_filters = weightList[0].shape
@@ -451,9 +452,9 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
     weight = (weight > 0).astype('int16')
     weight = _op.cast(etab.new_const(weight), 'int16')
     if etab.data_layout == 'NCHW':
-        q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=0)
+        q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=0, pack_type='uint8')
     else:
-        q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=2, bit_axis=4)
+        q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=2, bit_axis=2, pack_type='uint8')
     params = {'weight': q_weight,
               'kernel_size': [kernel_h, kernel_w],
               'strides': [stride_h, stride_w],
@@ -461,6 +462,7 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
               'activation_bits': keras_layer.bits,
               'weight_bits': 1,
               'out_dtype': 'int16',
+              'pack_dtype': 'uint8',
               'data_layout': etab.data_layout}
     params['channels'] = n_filters
     if keras_layer.padding == 'valid':
@@ -862,6 +864,9 @@ def from_keras(model, shape=None, layout='NCHW'):
 
     shape: dict of str to int list/tuple
         Input shapes of the model, optional
+
+    layout: str
+        What data layout to use, should be NCHW or NHWC
 
     Returns
     -------
