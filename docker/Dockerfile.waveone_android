@@ -27,7 +27,6 @@ RUN mkdir /root/.ssh/
 ADD repo-key /root/.ssh/id_rsa
 RUN touch /root/.ssh/known_hosts
 RUN ssh-keyscan github.com >> /root/.ssh/known_hosts
-RUN echo "RECLONE"
 RUN cd /usr && \
 git clone -b josh/TVMTuning git@github.com:wave-one/main.git
 
@@ -102,8 +101,12 @@ WORKDIR $TVM_HOME
 RUN make jvmpkg && \
     make jvminstall
 
+WORKDIR $TVM_HOME/apps/android_rpc
+COPY android_config.mk $TVM_HOME/apps/android_rpc/src/main/jni/config.mk
+RUN gradle clean build
+
 WORKDIR $TVM_HOME/apps/android_deploy
-COPY android_config.mk $TVM_HOME/apps/android_deploy/src/main/jni
+COPY android_config.mk $TVM_HOME/apps/android_deploy/src/main/jni/config.mk
 RUN gradle clean build
 
 # Build cross compiler.
@@ -114,6 +117,10 @@ RUN ./build_android_cc.sh
 # Install useful python libraries.
 RUN pip3 install opencv-python && \
                  tensorflow==1.13.1
+
+# Install some other packages.
+RUN apt-get update
+RUN apt-get install -y screen
 
 # More environment variables
 ENV PYTHONPATH=${WO_ROOT}/code:${WO_ROOT}/code/python:${PYTHONPATH}
