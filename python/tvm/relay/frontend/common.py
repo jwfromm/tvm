@@ -256,6 +256,7 @@ class ExprTable(object):
         self.params = {}
         self.const_ctr = 1
         self.in_padding = False
+        self.data_layout = 'NCHW'
 
     def new_const(self, value, shape=None, dtype="float32"):
         name = "_param_%d" % (self.const_ctr)

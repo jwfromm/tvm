@@ -435,8 +435,11 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
     _check_data_format(keras_layer)
     weightList = keras_layer.get_weights()
     kernel_h, kernel_w, in_channels, n_filters = weightList[0].shape
-    weight = weightList[0].transpose([3, 2, 0, 1])
-    dilation = [1, 1]
+    # NHWC Actually needs HWIO, use OIHW for NCHW as below.
+    if etab.data_layout == 'NCHW':
+        weight = weightList[0].transpose([3, 2, 0, 1])
+    else:
+        weight = weightList[0]
     if isinstance(keras_layer.dilation_rate, (list, tuple)):
         dilation = [keras_layer.dilation_rate[0], keras_layer.dilation_rate[1]]
     else:
@@ -447,14 +450,18 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
     # Quantize and bitpack weights.
     weight = (weight > 0).astype('int16')
     weight = _op.cast(etab.new_const(weight), 'int16')
-    q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=0)
+    if etab.data_layout == 'NCHW':
+        q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=0)
+    else:
+        q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=2, bit_axis=4)
     params = {'weight': q_weight,
               'kernel_size': [kernel_h, kernel_w],
               'strides': [stride_h, stride_w],
               'padding': [0, 0],
               'activation_bits': keras_layer.bits,
               'weight_bits': 1,
-              'out_dtype': 'int16'}
+              'out_dtype': 'int16',
+              'data_layout': etab.data_layout}
     params['channels'] = n_filters
     if keras_layer.padding == 'valid':
         pass
@@ -467,8 +474,12 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
         if pad_t == pad_b and pad_l == pad_r:
             params['padding'] = (pad_t, pad_l)
         else:
-            inexpr = _op.nn.pad(data=inexpr, pad_width=(
-                (0, 0), (0, 0), (pad_t, pad_b), (pad_l, pad_r)))
+            if etab.data_layout == 'NCHW':
+                inexpr = _op.nn.pad(data=inexpr, pad_width=(
+                    (0, 0), (0, 0), (pad_t, pad_b), (pad_l, pad_r)))
+            else:
+                inexpr = _op.nn.pad(data=inexpr, pad_width=(
+                    (0, 0), (pad_t, pad_b), (pad_l, pad_r), (0, 0)))
     else:
         msg = 'Padding with {} is not supported for operator Convolution ' \
               'in frontend Keras.'
@@ -476,7 +487,10 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
     out = _op.nn.bitserial_conv2d(data=inexpr, **params)
     if keras_layer.use_bias:
         bias = etab.new_const(weightList[1])
-        out = _op.nn.bias_add(out, bias)
+        if etab.data_layout == 'NCHW':
+            out = _op.nn.bias_add(out, bias)
+        else:
+            out = _op.nn.bias_add(out, bias, axis=-1)
     # defuse activation
     act_type = keras_layer.activation.__name__
     if act_type != 'linear':
@@ -485,6 +499,7 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
 
 
 def _convert_bitserial_dense(inexpr, keras_layer, etab):
+    # TODO fix tensorization bug.
     return inexpr
     weightList = keras_layer.get_weights()
     # Quantize and pack weight.
@@ -513,7 +528,7 @@ def _convert_bitserial_dense(inexpr, keras_layer, etab):
 
 
 def _convert_shiftnorm(inexpr, keras_layer, etab):
-    # Ignore for now, need to quantize later.
+    # TODO Ignore for now, need to quantize later.
     return inexpr
     params = {'scale': False,
               'center': False,
