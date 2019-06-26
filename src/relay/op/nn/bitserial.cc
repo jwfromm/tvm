@@ -103,6 +103,9 @@ efficient implementation of bitserial operations.
 .add_type_rel("BitPack", BitPackRel);
 
 
+// relay.nn.bitserial_conv2d
+TVM_REGISTER_NODE_TYPE(BinaryConv2DAttrs);
+
 bool BinaryConv2DRel(const Array<Type>& types,
                      int num_inputs,
                      const Attrs& attrs,

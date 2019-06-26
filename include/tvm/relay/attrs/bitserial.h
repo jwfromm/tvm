@@ -36,6 +36,7 @@ struct BinaryConv2DAttrs : public tvm::AttrsNode<BinaryConv2DAttrs> {
   int activation_bits;
   int weight_bits;
   std::string data_layout;
+  std::string kernel_layout;
   DataType pack_dtype;
   DataType out_dtype;
   bool unipolar;
@@ -64,6 +65,9 @@ struct BinaryConv2DAttrs : public tvm::AttrsNode<BinaryConv2DAttrs> {
     TVM_ATTR_FIELD(data_layout)
         .set_default("NCHW")
         .describe("Dimension ordering of input data, can be 'NCHW' or NHWC'.");
+    TVM_ATTR_FIELD(kernel_layout)
+        .set_default("OIHW")
+        .describe("Dimension ordering of kernel data, can be 'OIHW' or HWIO'.");
     TVM_ATTR_FIELD(pack_dtype)
         .set_default(NullValue<DataType>())
         .describe("Datatype to pack bits into.");
