@@ -129,12 +129,12 @@ if [[ $? != "0" ]]; then
 fi
 
 # Run the command inside the container.
-echo "Running '${COMMAND[@]}' inside ${DOCKER_IMG_NAME}..."
-
-# By default we cleanup - remove the container once it finish running (--rm)
-# and share the PID namespace (--pid=host) so the process inside does not have
-# pid 1 and SIGKILL is propagated to the process inside (jenkins can kill it).
-echo ${DOCKER_BINARY}
+#echo "Running '${COMMAND[@]}' inside ${DOCKER_IMG_NAME}..."
+#
+## By default we cleanup - remove the container once it finish running (--rm)
+## and share the PID namespace (--pid=host) so the process inside does not have
+## pid 1 and SIGKILL is propagated to the process inside (jenkins can kill it).
+#echo ${DOCKER_BINARY}
 echo ${DOCKER_BINARY} run --rm --pid=host \
     -v ${WORKSPACE}:/workspace \
     -w /workspace \

@@ -27,8 +27,7 @@ RUN mkdir /root/.ssh/
 ADD repo-key /root/.ssh/id_rsa
 RUN touch /root/.ssh/known_hosts
 RUN ssh-keyscan github.com >> /root/.ssh/known_hosts
-
-RUN echo "HERE"
+RUN echo "RECLONE"
 RUN cd /usr && \
 git clone -b josh/TVMTuning git@github.com:wave-one/main.git
 
@@ -70,8 +69,9 @@ ENV VK_LAYER_PATH ${VULKAN_SDK}/etc/explicit_layer.d
 
 # Build TVM
 COPY --from=intermediate /usr/main /usr/waveone
-RUN cd /usr && \
-    git clone -b WaveOne --depth=1 https://github.com/jwfromm/tvm --recursive
+
+WORKDIR /usr
+RUN git clone -b WaveOne --depth=1 https://github.com/jwfromm/tvm --recursive
 
 # Set up environment variables and run setup script.
 ENV TVM_HOME /usr/tvm
@@ -96,3 +96,25 @@ RUN cd /usr/tvm && \
 
 # Environment variables
 ENV PYTHONPATH=/usr/tvm/python:/usr/tvm/topi/python:/usr/tvm/nnvm/python/:/usr/tvm/vta/python:${PYTHONPATH}
+ENV ANDROID_HOME=/opt/android-sdk-linux
+
+WORKDIR $TVM_HOME
+RUN make jvmpkg && \
+    make jvminstall
+
+WORKDIR $TVM_HOME/apps/android_deploy
+COPY android_config.mk $TVM_HOME/apps/android_deploy/src/main/jni
+RUN gradle clean build
+
+# Build cross compiler.
+WORKDIR /opt/android-sdk-linux/ndk-bundle/build/tools
+COPY build_android_cc.sh .
+RUN ./build_android_cc.sh
+
+# Install useful python libraries.
+RUN pip3 install opencv-python && \
+                 tensorflow==1.13.1
+
+# More environment variables
+ENV PYTHONPATH=${WO_ROOT}/code:${WO_ROOT}/code/python:${PYTHONPATH}
+ENV TVM_NDK_CC=/opt/android-toolchain-arm64/bin/aarch64-linux-android-g++
