@@ -2,11 +2,29 @@
 #include <tvm/relay/op.h>
 #include <tvm/relay/attrs/bitserial.h>
 
+#include "../../pass/alter_op_layout.h"
+
 namespace tvm {
 namespace relay {
 
 // relay.nn.bitpack
 TVM_REGISTER_NODE_TYPE(BitPackAttrs);
+
+
+template<typename T>
+Array<Array<Layout> > BinaryConv2DInferCorrectLayout(
+    const Attrs& attrs,
+    const Array<Layout>& new_in_layouts,
+    const Array<Layout>& old_in_layouts,
+    const Array<Array<IndexExpr>> &old_in_shapes) {
+  const T* params = attrs.as<T>();
+
+  // We always make other operators to fit the layouts of convolution layers
+  // So this inference ignores all inputs
+  return Array<Array<Layout> >{{params->data_layout, params->kernel_layout},
+                               {params->data_layout}};
+}
+
 
 bool BitPackRel(const Array<Type>& types,
                 int num_inputs,
@@ -39,6 +57,11 @@ bool BitPackRel(const Array<Type>& types,
       out_shape.push_back(data->shape[i]);
     }
   }
+  // Add extra check for last axis expansion.
+  if (bit_axis == ndim) {
+    out_shape.push_back(bits);
+  }
+
   reporter->Assign(types[1], TensorTypeNode::make(out_shape, pack_type));
   return true;
 }
@@ -162,7 +185,8 @@ on some platforms.
 .add_argument("data", "Tensor", "The input tensor.")
 .add_argument("weight", "Tensor", "The weight tensor.")
 .set_support_level(2)
-.add_type_rel("BinaryConv2D", BinaryConv2DRel);
+.add_type_rel("BinaryConv2D", BinaryConv2DRel)
+.set_attr<FInferCorrectLayout>("FInferCorrectLayout", BinaryConv2DInferCorrectLayout<BinaryConv2DAttrs>);
 
 
 // relay.nn.bitserial_dense
