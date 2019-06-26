@@ -577,7 +577,7 @@ def schedule_bitserial_conv2d(attrs, outs, target):
         raise ValueError("Data layout not supported.")
 
 
-reg.register_pattern("nn.bitserial_conv2d", OpPattern.OUT_ELEMWISE_FUSABLE)
+reg.register_pattern("nn.bitserial_conv2d", OpPattern.OPAQUE)
 
 
 # bitserial_dense

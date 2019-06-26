@@ -192,6 +192,7 @@ def _convert_dense(inexpr, keras_layer, etab):
 
 
 def _convert_convolution(inexpr, keras_layer, etab):
+    return inexpr
     _check_data_format(keras_layer)
     is_deconv = type(keras_layer).__name__ == 'Conv2DTranspose'
     is_depthconv = type(keras_layer).__name__ == 'DepthwiseConv2D'
@@ -568,6 +569,7 @@ def _convert_scalu(inexpr, keras_layer, etab):
 
 
 def _convert_batchnorm(inexpr, keras_layer, etab):
+    return inexpr
     if etab.data_layout == 'NCHW' or len(keras_layer.input_shape) < 4:
         axis = 1
     else:
