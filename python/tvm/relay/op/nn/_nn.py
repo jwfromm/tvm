@@ -609,4 +609,4 @@ def schedule_bitserial_dense(attrs, outputs, target):
         return topi.generic.schedule_bitserial_dense(outputs)
 
 
-reg.register_pattern("nn.bitserial_dense", reg.OpPattern.OUT_ELEMWISE_FUSABLE)
+reg.register_pattern("nn.bitserial_dense", reg.OpPattern.OPAQUE)

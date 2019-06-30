@@ -24,7 +24,7 @@ from ..nn.pad import pad
 from ..nn.bitserial_conv2d import bitserial_conv2d_nhwc
 from ..nn.bitserial_util import bitpack, binary_op_multiplier
 from ..nn.util import get_pad_tuple
-from ..util import get_const_int, get_const_tuple
+from ..util import traverse_inline, get_const_int, get_const_tuple
 from .. import generic
 
 def _kernel_vec_spatial_pack_nhwc(kernel, kernel_bits, VC, use_bitpack=True):
@@ -318,17 +318,9 @@ def _schedule_spatial_conv2d_nhwc(cfg, s, data_pad, data_vec, kernel_vec,
 def schedule_bitserial_conv2d_nhwc(cfg, outs):
     """Arm cpu schedule for bitserial conv2d"""
     s = tvm.create_schedule([x.op for x in outs])
-    scheduled_ops = []
 
-    def traverse(op):
+    def _callback(op):
         """Traverse operators from computation graph"""
-        # inline all one-to-one-mapping operators except the last stage (output)
-        if tag.is_broadcast(op.tag):
-            if op not in s.outputs:
-                s[op].compute_inline()
-            for tensor in op.input_tensors:
-                if tensor.op.input_tensors and tensor.op not in scheduled_ops:
-                    traverse(tensor.op)
 
         if 'spatial_bitserial_conv_nhwc' in op.tag:
             output = op.output(0)
@@ -346,7 +338,6 @@ def schedule_bitserial_conv2d_nhwc(cfg, outs):
             unipolar = "unipolar" in conv_out.op.tag
             _schedule_spatial_conv2d_nhwc(cfg, s, data_pad, data_vec, kernel_vec,
                                           conv_out, output, outs[0], unipolar)
-        scheduled_ops.append(op)
-
-    traverse(outs[0].op)
+    #traverse(outs[0].op)
+    traverse_inline(s, outs[0].op, _callback)
     return s

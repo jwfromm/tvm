@@ -503,7 +503,6 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
 
 def _convert_bitserial_dense(inexpr, keras_layer, etab):
     # TODO fix tensorization bug.
-    return inexpr
     weightList = keras_layer.get_weights()
     # Quantize and pack weight.
     weight = weightList[0].transpose([1, 0])
