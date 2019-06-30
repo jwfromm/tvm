@@ -502,19 +502,21 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
 
 
 def _convert_bitserial_dense(inexpr, keras_layer, etab):
-    # TODO fix tensorization bug.
+    # Maybe force inputs to be int.
+    #inexpr = _op.cast(inexpr, 'int16')
     weightList = keras_layer.get_weights()
     # Quantize and pack weight.
     weight = weightList[0].transpose([1, 0])
     weight = (weight > 0).astype('int16')
     weight = _op.cast(etab.new_const(weight), 'int16')
-    q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=1)
+    q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=1, pack_type='uint8')
     params = {
         'weight': q_weight,
         'units': weightList[0].shape[1],
         'data_bits': keras_layer.bits,
         'weight_bits': 1,
-        'out_dtype': 'int16'
+        'out_dtype': 'int16',
+        'pack_dtype': 'uint8'
     }
     input_shape = keras_layer.input_shape
     input_dim = len(input_shape)
