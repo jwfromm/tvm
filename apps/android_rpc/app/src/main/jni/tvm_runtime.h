@@ -58,6 +58,29 @@
 
 #include "../src/contrib/sort/sort.cc"
 
+// Waveone source files.
+
+// common
+#include "../src/contrib/waveone/wolib/wo/common/exception.cc"
+#include "../src/contrib/waveone/wolib/wo/common/colorspace.cc"
+#include "../src/contrib/waveone/wolib/wo/common/utils.cc"
+#include "../src/contrib/waveone/wolib/wo/common/string.cc"
+
+// aec
+#include "../src/contrib/waveone/wolib/wo/aec/package.cc"
+#include "../src/contrib/waveone/wolib/wo/aec/header.cc"
+#include "../src/contrib/waveone/wolib/wo/aec/merge.cc"
+#include "../src/contrib/waveone/wolib/wo/aec/aec_gaussian.cc"
+#include "../src/contrib/waveone/wolib/wo/aec/split.cc"
+#include "../src/contrib/waveone/wolib/wo/aec/aec_api.cc"
+#include "../src/contrib/waveone/wolib/wo/aec/aec_core.cc"
+#include "../src/contrib/waveone/wolib/wo/aec/message_coding.cc"
+
+//ops
+#include "../src/contrib/waveone/wolib/wo/ops/flow.cc"
+#include "../src/contrib/waveone/wolib/wo/ops/bitplane.cc"
+#include "../src/contrib/waveone/wolib/wo/ops/operators.cc"
+
 #ifdef TVM_OPENCL_RUNTIME
 #include "../src/runtime/opencl/opencl_device_api.cc"
 #include "../src/runtime/opencl/opencl_module.cc"
