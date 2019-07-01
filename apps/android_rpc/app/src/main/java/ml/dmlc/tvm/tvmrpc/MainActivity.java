@@ -149,13 +149,13 @@ public class MainActivity extends AppCompatActivity {
 
     if (enable) {
     SharedPreferences pref = getApplicationContext().getSharedPreferences("RPCProxyPreference", Context.MODE_PRIVATE);
-    String inputAddress = pref.getString("input_address", null);
+    String inputAddress = pref.getString("input_address", "192.168.1.30");
     if (null != inputAddress)
         edProxyAddress.setText(inputAddress);
-    String inputPort = pref.getString("input_port", null);
+    String inputPort = pref.getString("input_port", "9190");
     if (null != inputPort)
         edProxyPort.setText(inputPort);
-    String inputKey = pref.getString("input_key", null);
+    String inputKey = pref.getString("input_key", "android");
     if (null != inputKey)
         edAppKey.setText(inputKey);
     boolean isChecked = pref.getBoolean("input_switch", false);

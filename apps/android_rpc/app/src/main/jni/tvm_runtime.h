@@ -56,6 +56,8 @@
 #include "../src/runtime/graph/graph_runtime.cc"
 #include "../src/runtime/ndarray.cc"
 
+#include "../src/contrib/sort/sort.cc"
+
 #ifdef TVM_OPENCL_RUNTIME
 #include "../src/runtime/opencl/opencl_device_api.cc"
 #include "../src/runtime/opencl/opencl_module.cc"

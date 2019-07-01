@@ -27,8 +27,9 @@ RUN mkdir /root/.ssh/
 ADD repo-key /root/.ssh/id_rsa
 RUN touch /root/.ssh/known_hosts
 RUN ssh-keyscan github.com >> /root/.ssh/known_hosts
+RUN echo "REBUILD"
 RUN cd /usr && \
-git clone -b josh/TVMTuning git@github.com:wave-one/main.git
+    git clone -b josh/TVMTuning git@github.com:wave-one/main.git
 
 # Second stage.
 FROM ubuntu:16.04
