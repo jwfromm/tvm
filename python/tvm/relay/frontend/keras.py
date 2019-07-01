@@ -192,7 +192,6 @@ def _convert_dense(inexpr, keras_layer, etab):
 
 
 def _convert_convolution(inexpr, keras_layer, etab):
-    return inexpr
     _check_data_format(keras_layer)
     is_deconv = type(keras_layer).__name__ == 'Conv2DTranspose'
     is_depthconv = type(keras_layer).__name__ == 'DepthwiseConv2D'
@@ -213,9 +212,12 @@ def _convert_convolution(inexpr, keras_layer, etab):
             weight = weight.transpose([2, 3, 0, 1])
         else:
             weight = weight.transpose([0, 1, 3, 2])
-    else:
+    elif etab.data_layout == 'NCHW':
         kernel_h, kernel_w, in_channels, n_filters = weightList[0].shape
         weight = weightList[0].transpose([3, 2, 0, 1])
+    else:
+        kernel_h, kernel_w, in_channels, n_filters = weightList[0].shape
+        weight = weightList[0]
     if isinstance(keras_layer.dilation_rate, (list, tuple)):
         dilation = [keras_layer.dilation_rate[0], keras_layer.dilation_rate[1]]
     else:
