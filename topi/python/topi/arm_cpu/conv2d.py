@@ -257,9 +257,13 @@ def _decl_spatial_pack_nhwc(cfg, data, kernel, strides, padding, dilation, layou
     # TODO? Dilation
 
     if len(kernel.shape) == 4:
+        pre_packed = False
         KH, KW, _, CO = get_const_tuple(kernel.shape)
+    else:
+        pre_packed = True
+        CO, _, KH, KW, VC = get_const_tuple(kernel.shape)
+        CO = CO * VC
 
-    #pad_top, pad_left, pad_bottom, pad_right = get_const_tuple(padding)
     pad_top, pad_left, pad_bottom, pad_right = get_pad_tuple( padding, (KH, KW))
     HSTR, WSTR = strides if isinstance(strides, (tuple, list)) else (strides, strides)
     OH = (IH + pad_top + pad_bottom - KH) // HSTR + 1
@@ -282,9 +286,9 @@ def _decl_spatial_pack_nhwc(cfg, data, kernel, strides, padding, dilation, layou
         raise RuntimeError("Invalid num_tile")
 
     cfg.define_reorder("reorder_0",
-                       [n, oh, ow, co, ci, kh, kw, vh, vw, vc],
+                       [n, oh, ow, co, ci, kh, kw, vh, vc, vw],
                        policy='candidate', candidate=[
-                           [n, oh, ow, co, ci, kh, kw, vh, vw, vc],
+                           [n, oh, ow, co, ci, kh, kw, vh, vc, vw],
                            [n, oh, ow, co, ci, kh, kw, vc, vh, vw]])
 
     cfg.define_annotate("ann_reduce", [kh, kw], policy='try_unroll')
