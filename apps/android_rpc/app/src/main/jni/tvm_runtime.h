@@ -56,8 +56,6 @@
 #include "../src/runtime/graph/graph_runtime.cc"
 #include "../src/runtime/ndarray.cc"
 
-#include "../src/contrib/sort/sort.cc"
-
 // Waveone source files.
 
 // common
