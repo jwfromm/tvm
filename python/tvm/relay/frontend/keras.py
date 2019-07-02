@@ -345,10 +345,11 @@ def _convert_pooling(inexpr, keras_layer, etab):
     _check_data_format(keras_layer)
     pool_type = type(keras_layer).__name__
     # global pool in keras = global pool + flatten in nnvm/relay
+    global_pool_params = {'layout' : etab.data_layout}
     if pool_type == 'GlobalMaxPooling2D':
-        return _convert_flatten(_op.nn.global_max_pool2d(inexpr), keras_layer, etab)
+        return _convert_flatten(_op.nn.global_max_pool2d(inexpr, **global_pool_params), keras_layer, etab)
     if pool_type == 'GlobalAveragePooling2D':
-        return _convert_flatten(_op.nn.global_avg_pool2d(inexpr), keras_layer, etab)
+        return _convert_flatten(_op.nn.global_avg_pool2d(inexpr, **global_pool_params), keras_layer, etab)
     pool_h, pool_w = keras_layer.pool_size
     stride_h, stride_w = keras_layer.strides
     params = {'pool_size': [pool_h, pool_w],
@@ -572,7 +573,6 @@ def _convert_scalu(inexpr, keras_layer, etab):
 
 
 def _convert_batchnorm(inexpr, keras_layer, etab):
-    return inexpr
     if etab.data_layout == 'NCHW' or len(keras_layer.input_shape) < 4:
         axis = 1
     else:
