@@ -81,6 +81,18 @@
 #include "../src/contrib/waveone/wolib/wo/ops/bitplane.cc"
 #include "../src/contrib/waveone/wolib/wo/ops/operators.cc"
 
+// third party
+#include "../src/contrib/waveone/wolib/thirdparty/md5/md5.cc"
+
+// TVM Waveone operators.
+#include "../src/contrib/waveone/aec_decode.cc"
+#include "../src/contrib/waveone/aec_encode.cc"
+#include "../src/contrib/waveone/aec_get_probs.cc"
+#include "../src/contrib/waveone/aec_merge.cc"
+#include "../src/contrib/waveone/aec_range_decode_gaussian.cc"
+#include "../src/contrib/waveone/aec_range_encode_gaussian.cc"
+#include "../src/contrib/waveone/aec_split.cc"
+
 #ifdef TVM_OPENCL_RUNTIME
 #include "../src/runtime/opencl/opencl_device_api.cc"
 #include "../src/runtime/opencl/opencl_module.cc"
