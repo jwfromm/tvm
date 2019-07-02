@@ -158,7 +158,7 @@ public class MainActivity extends AppCompatActivity {
     String inputKey = pref.getString("input_key", "android");
     if (null != inputKey)
         edAppKey.setText(inputKey);
-    boolean isChecked = pref.getBoolean("input_switch", false);
+    boolean isChecked = pref.getBoolean("input_switch", true);
     input_switch.setChecked(isChecked);
     }
   }
