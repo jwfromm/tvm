@@ -17,6 +17,7 @@
 
 package ml.dmlc.tvm.tvmrpc;
 
+import android.content.Context;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.content.Intent;
@@ -25,10 +26,12 @@ import android.view.View;
 
 public class RPCActivity extends AppCompatActivity {
   private RPCProcessor tvmServerWorker;
+  public static RPCActivity instance;
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+    instance = this;
     setContentView(R.layout.activity_rpc);
 
     Button stopRPC = findViewById(R.id.button_stop_rpc);
@@ -62,5 +65,14 @@ public class RPCActivity extends AppCompatActivity {
     System.err.println("rpc activity onDestroy");
     tvmServerWorker.disconnect();
     super.onDestroy();
+  }
+
+  @Override
+  public Context getApplicationContext() {
+      return super.getApplicationContext();
+  }
+
+  public static RPCActivity getInstance() {
+      return instance;
   }
 }

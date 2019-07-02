@@ -105,6 +105,7 @@ public class MainActivity extends AppCompatActivity {
     setContentView(R.layout.activity_main);
     Toolbar toolbar = findViewById(R.id.toolbar);
     setSupportActionBar(toolbar);
+    Thread.setDefaultUncaughtExceptionHandler(new ExceptionHandler(this));
     final Context context = this;
 
     Switch switchPersistent = findViewById(R.id.switch_persistent);
