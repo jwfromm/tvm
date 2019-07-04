@@ -308,7 +308,7 @@ def _schedule_spatial_conv2d_nhwc(cfg, s, data_pad, data_vec, kernel_vec,
     s[last].reorder(n, oh, ow, co, vh, vw, vc)
     s[last].vectorize(vc)
     if last != output:
-        s[last].compute_inline()
+        s[output].compute_inline()
 
     s[conv_out].compute_at(s[last], co)
     s[last].parallel(oh)
