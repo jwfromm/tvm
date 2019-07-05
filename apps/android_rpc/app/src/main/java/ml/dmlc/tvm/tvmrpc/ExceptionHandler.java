@@ -22,7 +22,7 @@ public class ExceptionHandler implements Thread.UncaughtExceptionHandler {
             | Intent.FLAG_ACTIVITY_NEW_TASK);
         PendingIntent pendingIntent = PendingIntent.getActivity(RPCActivity.getInstance().getBaseContext(), 0, intent, PendingIntent.FLAG_ONE_SHOT);
         AlarmManager mgr = (AlarmManager) RPCActivity.getInstance().getBaseContext().getSystemService(Context.ALARM_SERVICE);
-        mgr.set(AlarmManager.RTC, System.currentTimeMillis() + 500, pendingIntent);
+        mgr.set(AlarmManager.RTC, System.currentTimeMillis() + 1000, pendingIntent);
 
         activity.finish();
 
