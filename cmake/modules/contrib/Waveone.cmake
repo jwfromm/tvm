@@ -1,6 +1,6 @@
 if (USE_WAVEONE)
   set (WO_ROOT src/contrib/waveone/wolib)
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWO_LOG_LEVEL=3")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -DWO_LOG_LEVEL=3")
   message(STATUS "Build with waveone support.")
   include_directories(
 	${WO_ROOT}
