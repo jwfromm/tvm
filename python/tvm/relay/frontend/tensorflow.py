@@ -305,15 +305,33 @@ def _aec_encode():
         return _op.waveone.aec_encode(inputs[0], inputs[1])
     return _impl
 
+
 def _aec_range_encode_gaussian():
     def _impl(inputs, attr, params):
-        quantized = inputs[0]
+        prequantized = inputs[0]
         anorm = inputs[1]
-        lookup = inputs.pop(2)
+        div_anorm = inputs[2]
+        lookup = inputs.pop(3)
         serialize = attr['serialize']
-        return _op.waveone.aec_range_encode_gaussian(quantized, anorm, lookup, serialize=serialize)
+        max_bytes_per_element = attr['max_bytes_per_element']
+        range_bits = attr['range_bits']
+        codelayer_bits = attr['codelayer_bits']
+        zero_prob_package_bits = attr['zero_prob_package_bits']
+        zero_prob_prior = attr['zero_prob_prior']
+        return _op.waveone.aec_range_encode_gaussian(
+            prequantized,
+            anorm,
+            div_anorm,
+            lookup,
+            serialize=serialize,
+            max_bytes_per_element=max_bytes_per_element,
+            range_bits=range_bits,
+            codelayer_bits=codelayer_bits,
+            zero_prob_package_bits=zero_prob_package_bits,
+            zero_prob_prior=zero_prob_prior)
 
     return _impl
+
 
 def _aec_range_decode_gaussian():
     def _impl(inputs, attr, params):
@@ -322,7 +340,24 @@ def _aec_range_decode_gaussian():
         div_anorm = inputs[2]
         lookup = inputs.pop(3)
         serialize = attr['serialize']
-        return _op.waveone.aec_range_decode_gaussian(gauss_encoded, anorm, div_anorm, lookup, serialize=serialize)
+        max_bytes_per_element = attr['max_bytes_per_element']
+        range_bits = attr['range_bits']
+        codelayer_bits = attr['codelayer_bits']
+        zero_prob_package_bits = attr['zero_prob_package_bits']
+        zero_prob_prior = attr['zero_prob_prior']
+
+        return _op.waveone.aec_range_decode_gaussian(
+            gauss_encoded,
+            anorm,
+            div_anorm,
+            lookup,
+            serialize=serialize,
+            max_bytes_per_element=max_bytes_per_element,
+            range_bits=range_bits,
+            codelayer_bits=codelayer_bits,
+            zero_prob_package_bits=zero_prob_package_bits,
+            zero_prob_prior=zero_prob_prior)
+
     return _impl
 
 def _aec_merge():
