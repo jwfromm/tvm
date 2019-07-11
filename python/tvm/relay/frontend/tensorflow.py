@@ -821,7 +821,13 @@ def _concat():
 def _pack():
     def _impl(inputs, attr, params):
         axis = int(attr["axis"])
-        inputs_reshaped = [_op.expand_dims(i, axis=axis, num_newaxis=1) for i in inputs]
+
+        # When inputs are scalars, output is shape [1,], this is a special case.
+        if len(attr['_output_shapes'][0]) != 1:
+            inputs_reshaped = [_op.expand_dims(i, axis=axis, num_newaxis=1) for i in inputs]
+        else:
+            inputs_reshaped = inputs
+
         return _op.concatenate(inputs_reshaped, axis)
     return _impl
 
@@ -1220,7 +1226,12 @@ def _stridedSlice():
 
 def _pad(name):
     def _impl(inputs, attr, params):
-        padlist = _get_param(params, inputs[1])
+        # Paddings may not be a constant, check if they need to be evaluated.
+        padlist = inputs[1]
+        if isinstance(padlist, _expr.Var):
+            padlist = _get_param(params, padlist)
+        else:
+            padlist = _infer_value(padlist, params).asnumpy()
         paddings = tuple(tuple(l) for l in padlist)
         attr['pad_width'] = paddings
         attr['pad_value'] = 0
@@ -1235,7 +1246,12 @@ def _pad(name):
 
 def _mirror_pad():
     def _impl(inputs, attr, params):
-        padlist = _get_param(params, inputs[1])
+        # Paddings may not be a constant, check if they need to be evaluated.
+        padlist = inputs[1]
+        if isinstance(padlist, _expr.Var):
+            padlist = _get_param(params, padlist)
+        else:
+            padlist = _infer_value(padlist, params).asnumpy()
         paddings = tuple(tuple(l) for l in padlist)
         attr['pad_width'] = paddings
         mode = attr['mode'].decode('utf-8')
@@ -1427,7 +1443,12 @@ def _floordiv():
     def _impl(inputs, attr, params):
         assert len(inputs) == 2
         div = AttrCvt('divide')(inputs, attr)
-        return _get_relay_op('floor')(div)
+        # No need to apply floor after integer division.
+        if 'int' not in attr['T'].name:
+            out = _get_relay_op('floor')(div)
+        else:
+            out = div
+        return out
     return _impl
 
 def _logical(name):
