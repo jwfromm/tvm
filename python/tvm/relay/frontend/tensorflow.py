@@ -1128,9 +1128,25 @@ def _stridedSlice():
         Tensorflow mask validation: https://github.com/tensorflow/tensorflow/blob/master/
         tensorflow/core/util/strided_slice_op.cc#L147-L368
         """
-        begin = _get_list_param(params, inputs[1])
-        end = _get_list_param(params, inputs[2])
-        stride = _get_list_param(params, inputs[3])
+        # begin, end, and stride may be dynamic, check if they are variables.
+        begin = inputs[1]
+        if isinstance(begin, _expr.Var):
+            begin = _get_list_param(params, begin)
+        else:
+            begin = _infer_value(begin, params).asnumpy()
+
+        end = inputs[2]
+        if isinstance(end, _expr.Var):
+            end = _get_list_param(params, end)
+        else:
+            end = _infer_value(end, params).asnumpy()
+
+        stride = inputs[3]
+        if isinstance(stride, _expr.Var):
+            stride = _get_list_param(params, stride)
+        else:
+            stride = _infer_value(stride, params).asnumpy()
+
         begin_mask = int(attr.get('begin_mask', 0))
         end_mask = int(attr.get('end_mask', 0))
         ellipsis_mask = int(attr.get('ellipsis_mask', 0))
