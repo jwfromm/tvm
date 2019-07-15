@@ -586,6 +586,8 @@ def _convert_shiftnorm(inexpr, keras_layer, etab):
     offset_const = _op.cast(etab.new_const(total_offset), 'int16')
     shift_const = _op.cast(etab.new_const(total_right_shift), 'int16')
     result = _op.right_shift(inexpr + offset_const, shift_const)
+    # Apply clipping to prepare next input.
+    result = _op.clip(result, 0, (2**keras_layer.bits) - 1)
     return result
 
 
