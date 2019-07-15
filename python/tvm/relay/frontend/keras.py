@@ -533,37 +533,59 @@ def _convert_bitserial_dense(inexpr, keras_layer, etab):
         out = _convert_activation(out, act_type, etab)
     return out
 
+# ShiftNorm Numpy Helper Functions
+def AP2(x):
+    return 2**(np.round(np.log2(np.abs(x))))
+
+def AP2_bits(x):
+    return np.round(np.log2(np.abs(x)))
+
+def FPQ(inputs, scale, bits):
+    y = np.clip(inputs, -scale, scale)
+    bit_value = scale / (2.0**bits - 1.0)
+    y = y / bit_value
+    y = np.round(y)
+    return y
+
+def get_quantize_bits(x):
+    mean = np.mean(np.reshape(x, [-1, x.shape[-1]]), axis=0)
+    bits = (x >= 0).astype('float32')
+    bits = 2 * bits - 1
+    approximate_mean = AP2(mean)
+    return approximate_mean, bits
+
+def compute_shift_scale(variance, mean, epsilon, previous_weights, bits):
+    std_factor = (1.0 / np.sqrt(variance + epsilon))
+    std_bits = AP2_bits(std_factor)
+    weight_mean, weight_bits = get_quantize_bits(previous_weights)
+    weight_scale_bits = -np.log2(weight_mean)
+    total_bits = weight_scale_bits + bits
+
+    mean_scale = 1.0 + ((1.0 / (2.0**bits - 1.0)) *
+                        (1.0 - (1.0 / 2.0**weight_scale_bits)))
+    quantized_means = FPQ(mean, mean_scale, total_bits)
+
+    # compute total right shift
+    total_right_shift = std_bits + weight_scale_bits
+    # compute total offset
+    total_offset = 2**(weight_scale_bits - 1) - quantized_means
+
+    return total_right_shift, total_offset
 
 def _convert_shiftnorm(inexpr, keras_layer, etab):
-    # TODO Ignore for now, need to quantize later.
-    return inexpr
-    params = {'scale': False,
-              'center': False,
-              'epsilon': keras_layer.epsilon}
-    idx = 0
-    if keras_layer.scale:
-        params['scale'] = True
-        gamma = keras_layer.get_weights()[idx]
-        params['gamma'] = etab.new_const(gamma)
-        idx += 1
-    if keras_layer.center:
-        params['center'] = True
-        beta = keras_layer.get_weights()[idx]
-        params['beta'] = etab.new_const(beta)
-        idx += 1
-    moving_mean = keras_layer.get_weights()[idx]
-    moving_var = keras_layer.get_weights()[idx + 1]
-    if len(keras_layer.input.shape) == 4:
-        moving_mean = np.reshape(moving_mean, [1, -1, 1, 1])
-        moving_var = np.reshape(moving_var, [1, -1, 1, 1])
-    params['moving_mean'] = etab.new_const(moving_mean)
-    params['moving_var'] = etab.new_const(moving_var)
-    if 'gamma' not in params.keys():
-        params['gamma'] = etab.new_const(np.ones_like(moving_mean))
-    if 'beta' not in params.keys():
-        params['beta'] = etab.new_const(np.zeros_like(moving_mean))
-    #result, moving_mean, moving_var = _op.nn.batch_norm(inexpr, **params)
-    result = (inexpr / params['moving_var']) - params['moving_mean']
+    weightList = keras_layer.get_weights()
+    # Weight 0 is previous layer kernel.
+    mean = weightList[1]
+    variance = weightList[2]
+    epsilon = keras_layer.epsilon
+    previous_weights = keras_layer.previous_layer.get_weights()[0]
+    bits = keras_layer.bits
+    total_right_shift, total_offset = compute_shift_scale(variance, mean, epsilon, previous_weights, bits)
+
+    # Apply shift normalization.
+    offset_const = _op.cast(etab.new_const(total_offset), 'int16')
+    shift_const = _op.cast(etab.new_const(total_right_shift), 'int16')
+    result = _op.right_shift(inexpr + offset_const, shift_const)
     return result
 
 
