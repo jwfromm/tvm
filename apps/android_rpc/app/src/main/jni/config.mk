@@ -17,18 +17,20 @@ APP_ABI = arm64-v8a
 APP_PLATFORM = android-28
 
 # whether enable OpenCL during compile
-USE_OPENCL = 0
+USE_OPENCL = 1
 
 USE_VULKAN = 1
 
 USE_SORT = 1
 
 # the additional include headers you want to add, e.g., SDK_PATH/adrenosdk/Development/Inc
-# ADD_C_INCLUDES += /home/jwfromm/Android/galaxy/adrenosdk/Development/Inc
-# ADD_C_INCLUDES += /home/jwfromm/OpenCL-Headers/ 
+ifdef USE_SORT
+ADD_C_INCLUDES += /home/jwfromm/Android/galaxy/adrenosdk/Development/Inc
+ADD_C_INCLUDES += /home/jwfromm/OpenCL-Headers/ 
 
 # the additional link libs you want to add, e.g., ANDROID_LIB_PATH/libOpenCL.so
-# ADD_LDLIBS = /home/jwfromm/Android/galaxy/libOpenCL.so
+ADD_LDLIBS = /home/jwfromm/Android/galaxy/libOpenCL.so
+endif
 
 # Include directories for waveone API
 ADD_C_INCLUDES += ${WO_ROOT}/code/cc/src/
