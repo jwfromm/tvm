@@ -114,6 +114,11 @@ class OnDeviceAttrs(Attrs):
 
 
 @register_relay_attr_node
+class AnnotateAttrs(Attrs):
+    """Attributes for annotation.annotate"""
+
+
+@register_relay_attr_node
 class DebugAttrs(Attrs):
     """Attributes for debug"""
 

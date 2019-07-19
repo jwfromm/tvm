@@ -44,6 +44,16 @@ struct OnDeviceAttrs : public tvm::AttrsNode<OnDeviceAttrs> {
   }
 };
 
+struct AnnotateAttrs : public tvm::AttrsNode<AnnotateAttrs> {
+  std::string note;
+
+  TVM_DECLARE_ATTRS(AnnotateAttrs, "relay.attrs.AnnotateAttrs") {
+    TVM_ATTR_FIELD(note)
+      .describe("String that can be used to mark operations.")
+      .set_default("");
+  }
+};
+
 }  // namespace relay
 }  // namespace tvm
 #endif  // TVM_RELAY_ATTRS_ANNOTATION_H_
