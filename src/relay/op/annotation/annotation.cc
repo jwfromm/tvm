@@ -156,7 +156,7 @@ Mark the start of integer layers.
 .set_num_inputs(1)
 .set_support_level(10)
 .add_type_rel("Identity", IdentityRel)
-.set_attr<TOpPattern>("TOpPattern", kOpaque)
+.set_attr<TOpPattern>("TOpPattern", kInjective)
 .set_attr<TOpIsStateful>("TOpIsStateful", false)
 .set_attr<FInferCorrectLayout>("FInferCorrectLayout",
                                ElemwiseArbitraryLayout)
@@ -182,7 +182,7 @@ Mark the end of integer layers.
 .set_num_inputs(1)
 .set_support_level(10)
 .add_type_rel("Identity", IdentityRel)
-.set_attr<TOpPattern>("TOpPattern", kOpaque)
+.set_attr<TOpPattern>("TOpPattern", kInjective)
 .set_attr<TOpIsStateful>("TOpIsStateful", false)
 .set_attr<FInferCorrectLayout>("FInferCorrectLayout",
                                ElemwiseArbitraryLayout)
@@ -191,6 +191,28 @@ Mark the end of integer layers.
                           const Type& out_dtype, const Target& target) -> Array<Tensor> {
                          return {topi::identity(inputs[0])};
                        });
+
+// relay.annotation.on_device
+TVM_REGISTER_NODE_TYPE(AnnotateAttrs);
+
+TVM_REGISTER_API("relay.op.annotation._make.annotate")
+.set_body_typed<Expr(Expr, std::string)>([](Expr data, std::string note) {
+  auto attrs = make_node<AnnotateAttrs>();
+  attrs->note = note;
+  static const Op& op = Op::Get("annotation.annotate");
+  return CallNode::make(op, {data}, Attrs(attrs), {});
+});
+
+RELAY_REGISTER_OP("annotation.annotate")
+.describe(R"code(Annotate an expression with a note)code" TVM_ADD_FILELINE)
+.set_num_inputs(1)
+.set_support_level(10)
+.add_type_rel("Identity", IdentityRel)
+.set_attr<TOpPattern>("TOpPattern", kInjective)
+.set_attr<TOpIsStateful>("TOpIsStateful", false)
+.set_attr<FInferCorrectLayout>("FInferCorrectLayout",
+                               ElemwiseArbitraryLayout);
+
 
 }  // namespace relay
 }  // namespace tvm

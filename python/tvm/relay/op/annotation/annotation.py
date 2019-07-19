@@ -63,7 +63,7 @@ def stop_fusion(data):
     return _make.stop_fusion(data)
 
 def integer_start(data):
-    """ Annotate and expression to mark the start of integer layers.
+    """ Annotate an expression to mark the start of integer layers.
 
     Parameters
     ----------
@@ -79,7 +79,7 @@ def integer_start(data):
 
 
 def integer_end(data):
-    """ Annotate and expression to mark the end of integer layers.
+    """ Annotate an expression to mark the end of integer layers.
 
     Parameters
     ----------
@@ -92,3 +92,21 @@ def integer_end(data):
         The annotated expression
     """
     return _make.integer_end(data)
+
+def annotate(data, note):
+    """ Annotate an expression with a specific message.
+
+    Parameters
+    ----------
+    data : tvm.relay.Expr
+        The expression to be annotated.
+
+    note : str
+        The message to attach to data.
+
+    Returns
+    -------
+    result : tvm.relay.Expr
+        The annotated expression.
+    """
+    return _make.annotate(data, note)
