@@ -156,10 +156,15 @@ RELAY_REGISTER_OP("annotation.annotate")
 .set_num_inputs(1)
 .set_support_level(10)
 .add_type_rel("Identity", IdentityRel)
-.set_attr<TOpPattern>("TOpPattern", kInjective)
+.set_attr<TOpPattern>("TOpPattern", kElemWise)
 .set_attr<TOpIsStateful>("TOpIsStateful", false)
 .set_attr<FInferCorrectLayout>("FInferCorrectLayout",
-                               ElemwiseArbitraryLayout);
+                               ElemwiseArbitraryLayout)
+.set_attr<FTVMCompute>("FTVMCompute",
+                       [](const Attrs& attrs, const Array<Tensor>& inputs,
+                          const Type& out_dtype, const Target& target) -> Array<Tensor> {
+                         return {topi::identity(inputs[0])};
+                       });
 
 
 }  // namespace relay
