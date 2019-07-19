@@ -139,5 +139,58 @@ Mark the end of bitpacking.
                          return {topi::identity(inputs[0])};
                        });
 
+Expr IntegerStart(Expr data) {
+  static const Op& op = Op::Get("annotation.integer_start");
+  return CallNode::make(op, {data}, Attrs{}, {});
+}
+
+TVM_REGISTER_API("relay.op.annotation._make.integer_start")
+.set_body_typed<Expr(Expr)>([](Expr data) {
+    return IntegerStart(data);
+});
+
+RELAY_REGISTER_OP("annotation.integer_start")
+.describe(R"code(
+Mark the start of integer layers.
+)code" TVM_ADD_FILELINE)
+.set_num_inputs(1)
+.set_support_level(10)
+.add_type_rel("Identity", IdentityRel)
+.set_attr<TOpPattern>("TOpPattern", kOpaque)
+.set_attr<TOpIsStateful>("TOpIsStateful", false)
+.set_attr<FInferCorrectLayout>("FInferCorrectLayout",
+                               ElemwiseArbitraryLayout)
+.set_attr<FTVMCompute>("FTVMCompute",
+                       [](const Attrs& attrs, const Array<Tensor>& inputs,
+                          const Type& out_dtype, const Target& target) -> Array<Tensor> {
+                         return {topi::identity(inputs[0])};
+                       });
+
+Expr IntegerEnd(Expr data) {
+  static const Op& op = Op::Get("annotation.integer_end");
+  return CallNode::make(op, {data}, Attrs{}, {});
+}
+
+TVM_REGISTER_API("relay.op.annotation._make.integer_end")
+.set_body_typed<Expr(Expr)>([](Expr data) {
+    return IntegerEnd(data);
+});
+RELAY_REGISTER_OP("annotation.integer_end")
+.describe(R"code(
+Mark the end of integer layers.
+)code" TVM_ADD_FILELINE)
+.set_num_inputs(1)
+.set_support_level(10)
+.add_type_rel("Identity", IdentityRel)
+.set_attr<TOpPattern>("TOpPattern", kOpaque)
+.set_attr<TOpIsStateful>("TOpIsStateful", false)
+.set_attr<FInferCorrectLayout>("FInferCorrectLayout",
+                               ElemwiseArbitraryLayout)
+.set_attr<FTVMCompute>("FTVMCompute",
+                       [](const Attrs& attrs, const Array<Tensor>& inputs,
+                          const Type& out_dtype, const Target& target) -> Array<Tensor> {
+                         return {topi::identity(inputs[0])};
+                       });
+
 }  // namespace relay
 }  // namespace tvm

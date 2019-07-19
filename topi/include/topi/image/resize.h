@@ -232,6 +232,9 @@ inline Tensor resize_bilinear_nhwc(const Tensor& input,
                                    bool align_corners = false,
                                    std::string name = "tensor",
                                    std::string tag = kInjective) {
+
+  auto dtype = input->dtype;
+
   Array<Expr> out_shape;
   out_shape.push_back(input->shape[0]);
   out_shape.push_back(shape[0]);
@@ -271,7 +274,7 @@ inline Tensor resize_bilinear_nhwc(const Tensor& input,
 
     auto y0 = tvm::cast(Int(32), tvm::floor(in_y));
     auto y1 = tvm::if_then_else((yc > other_y), other_y, yc);
-    auto y_lerp  = in_y - yf;
+    auto y_lerp  = tvm::cast(dtype, in_y - yf);
 
     auto in_x = indices[2] * x_ratio;
     auto xf = tvm::floor(in_x);
@@ -279,7 +282,7 @@ inline Tensor resize_bilinear_nhwc(const Tensor& input,
 
     auto x0 = tvm::cast(Int(32), tvm::floor(in_x));
     auto x1 = tvm::if_then_else((xc > other_x), other_x, xc);
-    auto x_lerp  = in_x - xf;
+    auto x_lerp  = tvm::cast(dtype, in_x - xf);
 
     auto A = input(indices[0], y0, x0, indices[3]);
     auto B = input(indices[0], y0, x1, indices[3]);
