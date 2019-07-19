@@ -19,6 +19,7 @@ from __future__ import absolute_import as _abs
 from . import _make
 from .... import nd as _nd
 from .... import TVMContext as _TVMContext
+from ..op import register_schedule, schedule_injective
 
 
 def on_device(data, device):
@@ -61,6 +62,9 @@ def stop_fusion(data):
         The annotated expression.
     """
     return _make.stop_fusion(data)
+
+
+register_schedule("annotation.annotate", schedule_injective)
 
 def annotate(data, note):
     """ Annotate an expression with a specific message.
