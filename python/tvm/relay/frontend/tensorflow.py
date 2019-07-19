@@ -2358,12 +2358,13 @@ class GraphProto(object):
                                                              attr,
                                                              control_flow_node_map)
                 else:
-                    name = node.name.split('/')[-1]
                     op = self._convert_operator(node.op, inputs, attr, graph)
+
+                    name = node.name.split('/')[-1]
                     if name == 'EnterInteger':
-                        op = _annotation.integer_start(op)
+                        op = _annotation.annotate(op, note='EnterInteger')
                     elif name == 'ExitInteger':
-                        op = _annotation.integer_end(op)
+                        op = _annotation.annotate(op, note='EndInteger')
 
                 # Check if op is converted to param
                 if isinstance(op, np.ndarray):
