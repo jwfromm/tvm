@@ -14,17 +14,17 @@
 #-------------------------------------------------------------------------------
 APP_ABI = arm64-v8a
 
-APP_PLATFORM = android-28
+APP_PLATFORM = android-24
 
 # whether enable OpenCL during compile
-USE_OPENCL = 1
+USE_OPENCL = 0
 
 USE_VULKAN = 1
 
 USE_SORT = 1
 
 # the additional include headers you want to add, e.g., SDK_PATH/adrenosdk/Development/Inc
-ifdef USE_SORT
+ifdef USE_OPENCL
 ADD_C_INCLUDES += /home/jwfromm/Android/galaxy/adrenosdk/Development/Inc
 ADD_C_INCLUDES += /home/jwfromm/OpenCL-Headers/ 
 
