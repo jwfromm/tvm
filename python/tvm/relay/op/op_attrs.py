@@ -256,3 +256,11 @@ class YoloReorgAttrs(Attrs):
 @register_relay_attr_node
 class ProposalAttrs(Attrs):
     """Attributes used in proposal operators"""
+
+@register_relay_attr_node
+class AecSplitAttrs(Attrs):
+    """Attributes used in waveone AEC split"""
+
+@register_relay_attr_node
+class AecGaussianAttrs(Attrs):
+    """Attributes used in waveone Gaussian functions."""
