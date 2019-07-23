@@ -105,6 +105,9 @@
 #include "../src/contrib/sort/sort.cc"
 #endif
 
+#ifdef USE_DEBUG_RUNTIME
+#include "../src/runtime/graph/debug/graph_runtime_debug.cc"
+#endif
 
 #include <android/log.h>
 

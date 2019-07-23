@@ -28,5 +28,9 @@ ifeq ($(USE_SORT), 1)
     APP_CPPFLAGS += -DUSE_SORT=1
 endif
 
+ifeq ($(USE_DEBUG_RUNTIME), 1)
+    APP_CPPFLAGS += -DUSE_DEBUG_RUNTIME=1
+endif
+
 # Add waveone logging level
 APP_CPPFLAGS += -DWO_LOG_LEVEL=3
