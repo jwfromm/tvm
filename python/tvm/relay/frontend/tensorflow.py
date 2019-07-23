@@ -750,9 +750,9 @@ def _resize_bilinear():
         # NHWC
         attr['layout'] = 'NHWC'
 
-        return AttrCvt(op_name="resize",
+        return _annotation.stop_fusion(AttrCvt(op_name="resize",
                        ignores=['Tdim'],
-                       extras={'method': "BILINEAR"})(inputs, attr)
+                       extras={'method': "BILINEAR"})(inputs, attr))
     return _impl
 
 def _resize_nearest_neighbor():
