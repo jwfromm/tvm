@@ -302,7 +302,8 @@ def _aec_get_probs():
 
 def _aec_encode():
     def _impl(inputs, attr, params):
-        return _op.waveone.aec_encode(inputs[0], inputs[1])
+        serialize = attr['serialize']
+        return _op.waveone.aec_encode(inputs[0], inputs[1], serialize=serialize)
     return _impl
 
 
@@ -455,7 +456,8 @@ def _aec_split():
 
 def _aec_decode():
     def _impl(inputs, attr, params):
-        return _op.waveone.aec_decode(inputs[0], inputs[1])
+        serialize = attr['serialize']
+        return _op.waveone.aec_decode(inputs[0], inputs[1], serialize=serialize)
     return _impl
 
 def _elemwise(name):
