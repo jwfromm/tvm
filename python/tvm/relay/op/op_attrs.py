@@ -264,3 +264,7 @@ class AecSplitAttrs(Attrs):
 @register_relay_attr_node
 class AecGaussianAttrs(Attrs):
     """Attributes used in waveone Gaussian functions."""
+
+@register_relay_attr_node
+class AecAttrs(Attrs):
+    """Attributes used in waveone code functions."""
