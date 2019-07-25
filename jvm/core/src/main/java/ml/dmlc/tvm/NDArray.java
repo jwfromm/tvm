@@ -141,7 +141,7 @@ public class NDArray extends NDArrayBase {
    */
   public void copyFrom(byte[] sourceArray) {
     checkCopySize(sourceArray.length);
-    if (dtype.typeCode != TVMType.INT || dtype.bits != 8) {
+    if ((dtype.typeCode != TVMType.INT && dtype.typeCode != TVMType.UINT) || dtype.bits != 8) {
       throw new IllegalArgumentException("Cannot set byte[] for " + dtype.toString() + " array");
     }
     copyFromRaw(sourceArray);
@@ -253,7 +253,7 @@ public class NDArray extends NDArrayBase {
    * @return A copy of array content.
    */
   public long[] asLongArray() {
-    if (dtype.typeCode != TVMType.INT || dtype.bits != 64) {
+    if ((dtype.typeCode != TVMType.INT && dtype.typeCode != TVMType.UINT) || dtype.bits != 64) {
       throw new IllegalArgumentException(
         "Cannot set convert to long[] for " + dtype.toString() + " array");
     }
@@ -325,7 +325,7 @@ public class NDArray extends NDArrayBase {
    * @return A copy of array content.
    */
   public byte[] asByteArray() {
-    if (dtype.typeCode != TVMType.INT || dtype.bits != 8) {
+    if ((dtype.typeCode != TVMType.INT && dtype.typeCode != TVMType.UINT) || dtype.bits != 8) {
       throw new IllegalArgumentException(
         "Cannot set convert to byte[] for " + dtype.toString() + " array");
     }
