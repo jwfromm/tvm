@@ -26,13 +26,13 @@ USE_SORT = 0
 USE_DEBUG_RUNTIME = 1
 
 # the additional include headers you want to add, e.g., SDK_PATH/adrenosdk/Development/Inc
-#ifeq ($(USE_OPENCL),)
-#    ADD_C_INCLUDES += /home/jwfromm/Android/galaxy/adrenosdk/Development/Inc
-#    ADD_C_INCLUDES += /home/jwfromm/OpenCL-Headers/
+ifeq ($(USE_OPENCL), 1)
+    ADD_C_INCLUDES += $(HOME)/Android/adrenosdk/Development/Inc
+    ADD_C_INCLUDES += $(HOME)/OpenCL-Headers/
 
     # the additional link libs you want to add, e.g., ANDROID_LIB_PATH/libOpenCL.so
-#    ADD_LDLIBS = /home/jwfromm/Android/galaxy/libOpenCL.so
-#endif
+    ADD_LDLIBS += $(HOME)/Android/galaxy/libOpenCL.so
+endif
 
 # Include directories for waveone API
 ADD_C_INCLUDES += ${WO_ROOT}/code/cc/src/
