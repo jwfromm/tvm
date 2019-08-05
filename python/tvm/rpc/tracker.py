@@ -263,6 +263,12 @@ class TCPEventHandler(tornado_util.TCPHandler):
             else:
                 self.ret_value(TrackerCode.FAIL)
         elif code == TrackerCode.UPDATE_INFO:
+            # Clean em out
+            for conn in self._tracker._connections.copy():
+                res = conn.summary()
+                if res.get("key", "").startswith("server"):
+                    self._tracker.close(conn)
+
             self._info.update(args[1])
             self.ret_value(TrackerCode.SUCCESS)
         elif code == TrackerCode.SUMMARY:
@@ -320,11 +326,12 @@ class TrackerServerHandler(object):
         self._scheduler_map[key].request(user, priority, callback)
 
     def close(self, conn):
-        self._connections.remove(conn)
-        if 'key' in conn._info:
-            key = conn._info['key'].split(':')[1]  # 'server:rasp3b' -> 'rasp3b'
-            for value in conn.put_values:
-                self._scheduler_map[key].remove(value)
+        if conn in self._connections:
+            self._connections.remove(conn)
+            if 'key' in conn._info:
+                key = conn._info['key'].split(':')[1]  # 'server:rasp3b' -> 'rasp3b'
+                for value in conn.put_values:
+                    self._scheduler_map[key].remove(value)
 
     def stop(self):
         """Safely stop tracker."""
