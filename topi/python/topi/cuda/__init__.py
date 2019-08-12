@@ -22,3 +22,4 @@ from .ssd import *
 from .nms import *
 from .rcnn import *
 from .sort import *
+from .waveone import *
