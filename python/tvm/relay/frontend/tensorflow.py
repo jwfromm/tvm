@@ -392,6 +392,12 @@ def _bitplane_decomposition():
 
     return _impl
 
+def _optical_flow():
+    def _impl(inputs, attr, params):
+        return _op.waveone.optical_flow(inputs[0], inputs[1])
+
+    return _impl
+
 def _bitplane_composition():
     def _impl(inputs, attr, params):
         # Extract bpu from shape.
@@ -1587,6 +1593,7 @@ _convert_map = {
     'Quantize'                          : _quantize(),
     'BitplaneComposition'               : _bitplane_composition(),
     'BitplaneDecomposition'             : _bitplane_decomposition(),
+    'OpticalFlow'                       : _optical_flow(),
     'MirrorPad'                         : _mirror_pad(),
     'Abs'                               : AttrCvt('abs'),
     'Add'                               : _elemwise('add'),
