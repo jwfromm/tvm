@@ -123,6 +123,192 @@ def _elemwise(name):
         return get_relay_op(name)(*inputs)
     return _impl
 
+def _quantize():
+    def _impl(inputs, attr, params):
+        bpu = attr['B']
+        dtype = attr['T'].name
+        q = 2.**(bpu - 1)
+        one_div_q = 1 / q
+        quantized = tvm.relay.const(one_div_q, dtype) * _op.ceil(tvm.relay.const(q, dtype) * inputs[0])
+        quantized = _op.clip(quantized, -1. + one_div_q, 1.)
+        return quantized
+
+    return _impl
+
+def _aec_get_probs():
+    def _impl(inputs, attr, params):
+        bitplanes = inputs[0]
+        feature_probs = inputs.pop(1)
+        return _op.waveone.aec_get_probs(bitplanes, feature_probs)
+
+    return _impl
+
+def _aec_encode():
+    def _impl(inputs, attr, params):
+        serialize = attr['serialize']
+        return _op.waveone.aec_encode(inputs[0], inputs[1], serialize=serialize)
+    return _impl
+
+
+def _aec_range_encode_gaussian():
+    def _impl(inputs, attr, params):
+        prequantized = inputs[0]
+        anorm = inputs[1]
+        div_anorm = inputs[2]
+        lookup = inputs.pop(3)
+        serialize = attr['serialize']
+        max_bytes_per_element = attr['max_bytes_per_element']
+        range_bits = attr['range_bits']
+        codelayer_bits = attr['codelayer_bits']
+        zero_prob_package_bits = attr['zero_prob_package_bits']
+        zero_prob_prior = attr['zero_prob_prior']
+        return _op.waveone.aec_range_encode_gaussian(
+            prequantized,
+            anorm,
+            div_anorm,
+            lookup,
+            serialize=serialize,
+            max_bytes_per_element=max_bytes_per_element,
+            range_bits=range_bits,
+            codelayer_bits=codelayer_bits,
+            zero_prob_package_bits=zero_prob_package_bits,
+            zero_prob_prior=zero_prob_prior)
+
+    return _impl
+
+
+def _aec_range_decode_gaussian():
+    def _impl(inputs, attr, params):
+        gauss_encoded = inputs[0]
+        anorm = inputs[1]
+        div_anorm = inputs[2]
+        lookup = inputs.pop(3)
+        serialize = attr['serialize']
+        max_bytes_per_element = attr['max_bytes_per_element']
+        range_bits = attr['range_bits']
+        codelayer_bits = attr['codelayer_bits']
+        zero_prob_package_bits = attr['zero_prob_package_bits']
+        zero_prob_prior = attr['zero_prob_prior']
+
+        return _op.waveone.aec_range_decode_gaussian(
+            gauss_encoded,
+            anorm,
+            div_anorm,
+            lookup,
+            serialize=serialize,
+            max_bytes_per_element=max_bytes_per_element,
+            range_bits=range_bits,
+            codelayer_bits=codelayer_bits,
+            zero_prob_package_bits=zero_prob_package_bits,
+            zero_prob_prior=zero_prob_prior)
+
+    return _impl
+
+def _aec_merge():
+    def _impl(inputs, attr, params):
+        data_tuple = _expr.Tuple(inputs)
+        return _op.waveone.aec_merge(data_tuple)
+
+    return _impl
+
+def _bitplane_decomposition():
+    def _impl(inputs, attr, params):
+        bpu = attr['B']
+        dtype = attr['T'].name
+        powb_np = 2.**(-bpu + 1.)
+        powb = tvm.relay.const(powb_np, dtype)
+        shift = tvm.relay.const(-1. + powb_np, dtype)
+        bitplanes = []
+        sign1m1 = _op.sign(inputs[0])
+        sign = (sign1m1 * tvm.relay.const(.5, dtype)) + tvm.relay.const(.5, dtype)
+        x = inputs[0] - (powb * sign)
+        x *= sign1m1
+        for b in range(bpu - 1):
+            x = tvm.relay.const(2., dtype) * x + shift
+            remainder = _op.cast(_op.greater(x, tvm.relay.const(0., dtype)), dtype)
+            x -= (shift + remainder)
+            bitplanes.append(_op.cast(remainder, 'uint8'))
+        bitplanes.append(_op.cast(sign, 'uint8'))
+        bitplanes = _op.stack(bitplanes, axis=-1)
+
+        return bitplanes
+
+    return _impl
+
+def _optical_flow():
+    def _impl(inputs, attr, params):
+        return _op.waveone.optical_flow(inputs[0], inputs[1])
+
+    return _impl
+
+def _bitplane_composition():
+    def _impl(inputs, attr, params):
+        # Extract bpu from shape.
+        bpu = attr['_input_shapes'][inputs[0]][-1]
+        powb = tvm.relay.const(2.**(-bpu + 1))
+        sign = _op.cast(_op.take(inputs[0], tvm.relay.const(bpu - 1), axis=-1),
+                        'float32')
+        sign1m1 = tvm.relay.const(2.) * sign - tvm.relay.const(1.)
+        x = tvm.relay.const(0.0)
+        for b in range(bpu - 1):
+            bit = _op.cast(
+                _op.take(inputs[0], tvm.relay.const(bpu - (b + 2)), axis=-1),
+                'float32')
+            x += bit
+            x *= tvm.relay.const(0.5)
+        x *= sign1m1
+        x += powb * sign
+        return x
+    return _impl
+
+def _aec_split():
+    def _impl(inputs, attr, params):
+        merged_code = inputs[0]
+        merged_codelen = inputs[1]
+        image_dims = inputs[2]
+        aec_params = inputs[3]
+
+        # Need to extract numpy values for input dims and aec_params
+        if isinstance(image_dims, _expr.Var):
+            image_dims_np = params[image_dims.name_hint].asnumpy()
+        # Otherwise we'll have to infer its value.
+        else:
+            image_dims_np = _infer_value(image_dims, params).asnumpy()
+
+        if isinstance(aec_params, _expr.Var):
+            aec_params_np = params[aec_params.name_hint].asnumpy()
+        else:
+            aec_params_np = _infer_value(aec_params, params).asnumpy()
+
+        # Compute output shapes.
+        def get_aec_shapes(image_dims, N, aec_params):
+            num_aec = aec_params.shape[0]
+            aec_shapes = []
+            for i in range(num_aec):
+                ratio, channels, bitplanes = aec_params[i]
+                output_shape = [
+                    N, channels,
+                    int(image_dims[0] / ratio),
+                    int(image_dims[1] / ratio)
+                ]
+                if bitplanes > 1:
+                    output_shape = output_shape + [bitplanes]
+                aec_shapes.append(output_shape)
+            return aec_shapes
+
+        N = attr['_input_shapes'][merged_code][0]
+        output_shapes = get_aec_shapes(image_dims_np, N, aec_params_np)
+
+        return _op.waveone.aec_split(merged_code, merged_codelen, image_dims, aec_params, output_shapes)
+
+    return _impl
+
+def _aec_decode():
+    def _impl(inputs, attr, params):
+        serialize = attr['serialize']
+        return _op.waveone.aec_decode(inputs[0], inputs[1], serialize=serialize)
+    return _impl
+
 def _pooling(name):
     def _impl(inputs, attr, params):
 
