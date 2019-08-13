@@ -295,12 +295,14 @@ class TypeInferencer : private ExprFunctor<Type(const Expr&)>,
                           op->span);
     }
 
-    // check completness
-    Match match = GetRef<Match>(op);
-    Array<Pattern> unmatched_cases = UnmatchedCases(match, this->mod_);
-    if (unmatched_cases.size() != 0) {
-      LOG(WARNING) << "Match clause " << match <<  " does not handle the following cases: "
+    if (op->complete) {
+      // check completness
+      Match match = GetRef<Match>(op);
+      Array<Pattern> unmatched_cases = UnmatchedCases(match, this->mod_);
+      if (unmatched_cases.size() != 0) {
+        LOG(FATAL) << "Match clause " << match <<  " does not handle the following cases: "
                    << unmatched_cases;
+      }
     }
 
     return rtype;
@@ -823,6 +825,9 @@ Function InferType(const Function& func,
     << std::endl << free_tvars;
   return Downcast<Function>(func_ret);
 }
+
+TVM_REGISTER_API("relay._transform.infer_type")
+.set_body_typed<Expr(Expr, Module)>([](Expr l, Module r) { return InferType(l, r); });
 
 namespace transform {
 

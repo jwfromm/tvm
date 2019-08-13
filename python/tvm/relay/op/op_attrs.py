@@ -62,6 +62,9 @@ class UpSamplingAttrs(Attrs):
 class PadAttrs(Attrs):
     """Attributes for nn.pad"""
 
+@register_relay_attr_node
+class MirrorPadAttrs(Attrs):
+    """Attributes for nn.mirror_pad"""
 
 @register_relay_attr_node
 class LeakyReluAttrs(Attrs):
@@ -257,14 +260,12 @@ class YoloReorgAttrs(Attrs):
 class ProposalAttrs(Attrs):
     """Attributes used in proposal operators"""
 
-@register_relay_attr_node
-class AecSplitAttrs(Attrs):
-    """Attributes used in waveone AEC split"""
 
 @register_relay_attr_node
-class AecGaussianAttrs(Attrs):
-    """Attributes used in waveone Gaussian functions."""
+class MaxPool2DAttrs(Attrs):
+    """Attributes used in max_pool2d operators"""
+
 
 @register_relay_attr_node
-class AecAttrs(Attrs):
-    """Attributes used in waveone code functions."""
+class AvgPool2DAttrs(Attrs):
+    """Attributes used in avg_pool2d operators"""

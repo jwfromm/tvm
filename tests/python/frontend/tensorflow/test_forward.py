@@ -469,6 +469,22 @@ def test_forward_depthtospace():
     _test_depthtospace(np.random.normal(size=[1, 32, 32, 4]), 2)
     _test_depthtospace(np.random.normal(size=[1, 16, 8, 32]), 4)
 
+#######################################################################
+# SpaceToDepth
+# ------------
+
+def _test_spacetodepth(data, block_size):
+    """ One iteration of space_to_depth operation with given data and block size """
+
+    with tf.Graph().as_default():
+        in_data = array_ops.placeholder(shape=data.shape, dtype=data.dtype)
+        array_ops.space_to_depth(in_data, block_size)
+
+        compare_tf_with_tvm(data, 'Placeholder:0', 'SpaceToDepth:0')
+
+def test_forward_spacetodepth():
+    _test_spacetodepth(np.random.normal(size=[1, 32, 32, 4]), 2)
+    _test_spacetodepth(np.random.normal(size=[1, 16, 8, 32]), 4)
 
 #######################################################################
 # Squeeze
@@ -622,8 +638,8 @@ def test_forward_variable():
 
 
 #######################################################################
-# MatMul
-# ------
+# MatMul, BatchMatMul, BatchMatMulV2
+# ----------------------------------
 
 def _test_matmul(i, j, k, dtype, outer=None):
     """ One iteration of matmul """
@@ -647,10 +663,28 @@ def _test_matmul(i, j, k, dtype, outer=None):
                 compare_tf_with_tvm([A_np, B_np], [A.name, B.name], result.name)
 
 def test_forward_matmul():
-    """ Matmul op test"""
+    """ MatMul op test"""
     _test_matmul(1, 3, 6, 'int32')
     _test_matmul(5, 3, 1, 'float64')
-    # TODO non-empty outer requires BatchMatMul (BatchMatMulV2 for some cases?) support
+
+def _test_batch_matmul(A_shape, B_shape, dtype, adjoint_a=False, adjoint_b=False):
+
+    with tf.Graph().as_default():
+        A = tf.placeholder(shape=A_shape, dtype=dtype, name='A')
+        B = tf.placeholder(shape=B_shape, dtype=dtype, name='B')
+        result = tf.matmul(A, B, adjoint_a=adjoint_a,
+                           adjoint_b=adjoint_b, name='batchmatmul')
+
+        A_np = np.random.uniform(high=5.0, size=A_shape).astype(dtype)
+        B_np = np.random.uniform(high=5.0, size=B_shape).astype(dtype)
+        compare_tf_with_tvm([A_np, B_np], [A.name, B.name], result.name)
+
+def test_forward_batch_matmul():
+    """ TF op BatchMatMul, BatchMatMulV2 test"""
+    _test_batch_matmul((3, 5, 4), (3, 4, 5), 'int32')
+    _test_batch_matmul((3, 5, 4), (3, 4, 5), 'float32', True, True)
+    _test_batch_matmul((3, 5, 4), (3, 5, 4), 'int32', True, False)
+    _test_batch_matmul((3, 5, 4), (3, 5, 4), 'float32', False, True)
 
 
 #######################################################################
@@ -836,9 +870,10 @@ def _test_split(in_shape, axis, num_or_size_splits, dtype):
     in_data = tf.placeholder(dtype, in_shape, name="in_data")
     num_split = len(num_or_size_splits) if isinstance(num_or_size_splits, list)\
                 else num_or_size_splits
-    tf.split(in_data, num_or_size_splits, axis=axis)
+    split = tf.split(in_data, num_or_size_splits, axis=axis)
+    relu = [tf.nn.relu(i) for i in split]
 
-    compare_tf_with_tvm([np_data], ['in_data:0'], [f'split:{n}' for n in range(num_split)])
+    compare_tf_with_tvm([np_data], ['in_data:0'], [n.name for n in relu])
 
     # and now test together with concat
     tf.reset_default_graph()
@@ -903,9 +938,9 @@ def _test_unstack(ip_shape, axis, dtype):
 
     tf.reset_default_graph()
     in_data = tf.placeholder(dtype, ip_shape, name="in_data")
-    tf.unstack(in_data, axis=axis)
+    unstack = tf.unstack(in_data, axis=axis)
 
-    compare_tf_with_tvm([np_data], ['in_data:0'], [f'unstack:{n}' for n in range(ip_shape[axis])])
+    compare_tf_with_tvm([np_data], ['in_data:0'], [n.name for n in unstack])
 
     tf.reset_default_graph()
     in_data = tf.placeholder(dtype, ip_shape, name="in_data")
@@ -1311,6 +1346,8 @@ def _test_pad(input_shape, paddings, mode, **kwargs):
                 out_name = 'PadV2:0'
             else:
                 out_name = 'Pad:0'
+        else:
+            out_name = 'MirrorPad:0'
 
         compare_tf_with_tvm(x, 'Placeholder:0', out_name)
 
@@ -1318,6 +1355,8 @@ def test_forward_pad():
     """ Pad """
     _test_pad((2, 3), [[1, 1], [2, 2]], mode="CONSTANT")
     _test_pad((2, 3), [[1, 1], [2, 2]], mode="CONSTANT", constant_values=1.0)
+    _test_pad((2, 3), [[1, 1], [2, 2]], mode="SYMMETRIC")
+    _test_pad((2, 3), [[1, 1], [2, 2]], mode="REFLECT")
 
 #######################################################################
 # Logical operators
@@ -1850,6 +1889,30 @@ def test_forward_log():
     tf.log(in_data, name="log")
     compare_tf_with_tvm([np_data], ['in_data:0'], 'log:0')
 
+def test_forward_log1p():
+    """test operator Log1p """
+    np_data = np.random.uniform(1, 100, size=(2, 3, 5)).astype(np.float32)
+    tf.reset_default_graph()
+    in_data = tf.placeholder(tf.float32, (2, 3, 5), name="in_data")
+    tf.log1p(in_data, name="log1p")
+    compare_tf_with_tvm([np_data], ['in_data:0'], 'log1p:0')
+
+def test_forward_cos():
+    """test operator cos """
+    np_data = np.random.uniform(1, 100, size=(2, 3, 5)).astype(np.float32)
+    tf.reset_default_graph()
+    in_data = tf.placeholder(tf.float32, (2, 3, 5), name="in_data")
+    tf.cos(in_data, name="cos")
+    compare_tf_with_tvm([np_data], ['in_data:0'], 'cos:0')
+
+def test_forward_sin():
+    """test operator sin """
+    np_data = np.random.uniform(1, 100, size=(2, 3, 5)).astype(np.float32)
+    tf.reset_default_graph()
+    in_data = tf.placeholder(tf.float32, (2, 3, 5), name="in_data")
+    tf.sin(in_data, name="sin")
+    compare_tf_with_tvm([np_data], ['in_data:0'], 'sin:0')
+
 def test_forward_negative():
     """test tf operator Neg """
     np_data = np.random.uniform(-100, 255, size=(224, 224, 3)).astype(np.float32)
@@ -2101,6 +2164,7 @@ if __name__ == '__main__':
     test_forward_transpose()
     test_forward_reshape()
     test_forward_depthtospace()
+    test_forward_spacetodepth()
     test_forward_squeeze()
     test_forward_pack()
     test_forward_size()
@@ -2140,6 +2204,9 @@ if __name__ == '__main__':
     test_forward_pow_exp()
     test_forward_sign()
     test_forward_log()
+    test_forward_log1p()
+    test_forward_cos()
+    test_forward_sin()
     test_forward_negative()
     test_forward_divide()
     test_forward_abs()
@@ -2196,6 +2263,7 @@ if __name__ == '__main__':
     test_forward_rel_ops()
     test_forward_logical()
     test_forward_where()
-
     test_forward_matmul()
-    # TODO missing tests: rank, range
+    test_forward_batch_matmul()
+
+    # TODO missing tests: rank

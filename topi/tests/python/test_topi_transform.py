@@ -45,6 +45,29 @@ def verify_expand_dims(in_shape, out_shape, axis, num_newaxis):
         check_device(device)
 
 
+def verify_reinterpret(in_shape, in_dtype, out_dtype, generator):
+    A = tvm.placeholder(shape=in_shape, name="A", dtype=in_dtype)
+    B = topi.reinterpret(A, out_dtype)
+    def check_device(device):
+        ctx = tvm.context(device, 0)
+        if not ctx.exist:
+            print("Skip because %s is not enabled" % device)
+            return
+        print("Running on target: %s" % device)
+        with tvm.target.create(device):
+            s = topi.generic.schedule_elemwise(B)
+        foo = tvm.build(s, [A, B], device, name="reinterpret")
+        data_npy = generator(in_shape).astype(in_dtype)
+        out_npy = data_npy.view(B.dtype)
+        data_nd = tvm.nd.array(data_npy, ctx)
+        out_nd = tvm.nd.array(np.empty(in_shape).astype(B.dtype), ctx)
+        foo(data_nd, out_nd)
+        np.testing.assert_equal(out_nd.asnumpy(), out_npy)
+
+    for device in get_all_backend():
+        check_device(device)
+
+
 def verify_transpose(in_shape, axes):
     A = tvm.placeholder(shape=in_shape, name="A")
     B = topi.transpose(A, axes)
@@ -421,6 +444,35 @@ def verify_tile(in_shape, reps):
     for device in get_all_backend():
         check_device(device)
 
+def verify_where(in_shape):
+    Cond = tvm.placeholder(shape=in_shape, name="cond")
+    dtype = Cond.dtype
+    A = tvm.placeholder(shape=in_shape, name="A")
+    B = tvm.placeholder(shape=in_shape, name="B")
+    C = topi.where(Cond, A, B)
+    def check_device(device):
+        ctx = tvm.context(device, 0)
+        if not ctx.exist:
+            print("Skip because %s is not enabled" % device)
+            return
+        print("Running on target: %s" % device)
+        with tvm.target.create(device):
+            s = topi.generic.schedule_broadcast(C)
+        f = tvm.build(s, [Cond, A, B, C], device, name="where")
+        cond_npy = np.random.uniform(low=-1, high=1, size=in_shape).astype(dtype)
+        x_npy = np.random.uniform(size=in_shape).astype(dtype)
+        y_npy = np.random.uniform(size=in_shape).astype(dtype)
+        out_npy = np.where(cond_npy, x_npy, y_npy)
+        cond_nd = tvm.nd.array(cond_npy, ctx)
+        x_nd = tvm.nd.array(x_npy, ctx)
+        y_nd = tvm.nd.array(y_npy, ctx)
+        out_nd = tvm.nd.array(np.empty(out_npy.shape).astype(C.dtype), ctx)
+        f(cond_nd, x_nd, y_nd, out_nd)
+        tvm.testing.assert_allclose(out_nd.asnumpy(), out_npy)
+
+    for device in get_all_backend():
+        check_device(device)
+
 def test_strided_slice():
     verify_strided_slice((3, 4, 3), [0, 0, 0], [4, -5, 4], [1, -1, 2])
     verify_strided_slice((3, 4, 3), [1, 1, 0], [4, 4, 3], [2, 1, 1])
@@ -434,6 +486,19 @@ def test_expand_dims():
     verify_expand_dims((3, 10), (1, 3, 10), -3, 1)
 
 
+def test_reinterpret():
+    verify_reinterpret((1000,), "float32", "int32",
+                       lambda shape: np.random.randn(*shape) * 1000)
+    verify_reinterpret((1000,), "float16", "int16",
+                       lambda shape: np.random.randn(*shape) * 100)
+    verify_reinterpret((1000,), "int16", "uint16",
+                       lambda shape: np.random.randint(-1000, 1000, size=shape))
+    verify_reinterpret((1000,), "uint32", "int32",
+                       lambda shape: np.random.randint(0, 2 ** 32 - 1, size=shape))
+    verify_reinterpret((1000,), "uint32", "int32",
+                       lambda shape: np.random.randint(0, 2 ** 32 - 1, size=shape))
+
+
 def test_transpose():
     verify_transpose((3, 10, 2), (1, 0, 2))
     verify_transpose((3, 10, 5), (2, 0, 1))
@@ -445,6 +510,10 @@ def test_reshape():
     verify_reshape((4, 2, 3, 4), (2, 4, 12))
     verify_reshape((4, 2, 3, 4), (2, 48))
     verify_reshape((16, ), (2, 2, 2, 2))
+
+
+def test_where():
+    verify_where((1, 2, 3, 4))
 
 
 def test_squeeze():
@@ -676,6 +745,32 @@ def test_ndarray_size():
         check_device(backend)
 
 
+def test_where_fusion():
+    """integration test that where and zeros should be properly inlined"""
+    def check_device(device):
+        with tvm.target.create(device):
+            ctx = tvm.context(device, 0)
+            if not ctx.exist:
+                print("Skip because %s is not enabled" % device)
+                return
+            print("Running on target: %s" % device)
+            data = tvm.placeholder((2, 1, 2, 4), 'int8', 'data')
+            w = tvm.placeholder((3, 1, 2, 2), 'int8', 'w')
+            conv1 = topi.nn.conv2d(data, w, 1, 0, 1, out_dtype='int32')
+            zeros = topi.full((2, 3, 1, 3), 'int32', tvm.const(0, dtype='int32'))
+            gt = topi.greater_equal(conv1, zeros)
+            one = topi.full((2, 3, 1, 3), 'int32', tvm.const(1, dtype='int32'))
+            two = topi.full((2, 3, 1, 3), 'int32', tvm.const(2, dtype='int32'))
+            where = topi.where(gt, one, two)
+            add = topi.add(conv1, where)
+            outs = [add]
+            s = topi.generic.schedule_conv2d_nchw(outs)
+            tvm.build(s, [data, w, add], target=backend)
+
+    for backend in get_all_backend():
+        check_device(backend)
+
+
 if __name__ == "__main__":
     test_strided_slice()
     test_concatenate()
@@ -683,6 +778,7 @@ if __name__ == "__main__":
     test_transpose()
     test_expand_dims()
     test_reshape()
+    test_where()
     test_squeeze()
     test_split()
     test_flip()
@@ -696,3 +792,4 @@ if __name__ == "__main__":
     test_shape()
     test_sequence_mask()
     test_ndarray_size()
+    test_where_fusion()

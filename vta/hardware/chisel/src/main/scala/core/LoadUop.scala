@@ -69,6 +69,7 @@ class LoadUop(debug: Boolean = false)(implicit p: Parameters) extends Module {
   })
   val numUop = 2 // store two uops per sram word
   val uopBits = p(CoreKey).uopBits
+  val uopBytes = uopBits / 8
   val uopDepth = p(CoreKey).uopMemDepth / numUop
 
   val dec = io.inst.asTypeOf(new MemDecode)
@@ -76,7 +77,7 @@ class LoadUop(debug: Boolean = false)(implicit p: Parameters) extends Module {
   val xcnt = Reg(chiselTypeOf(io.vme_rd.cmd.bits.len))
   val xlen = Reg(chiselTypeOf(io.vme_rd.cmd.bits.len))
   val xrem = Reg(chiselTypeOf(dec.xsize))
-  val xsize = dec.xsize(0) + (dec.xsize >> log2Ceil(numUop)) - 1.U
+  val xsize =  (dec.xsize >> log2Ceil(numUop)) + dec.xsize(0) + (dec.sram_offset % 2.U) - 1.U
   val xmax = (1 << mp.lenBits).U
   val xmax_bytes = ((1 << mp.lenBits)*mp.dataBits/8).U
 
@@ -91,13 +92,13 @@ class LoadUop(debug: Boolean = false)(implicit p: Parameters) extends Module {
     is (sIdle) {
       when (io.start) {
         state := sReadCmd
-	when (xsize < xmax) {
+        when (xsize < xmax) {
           xlen := xsize
           xrem := 0.U
-	} .otherwise {
+        } .otherwise {
           xlen := xmax - 1.U
           xrem := xsize - xmax
-	}
+        }
       }
     }
     is (sReadCmd) {
@@ -129,7 +130,7 @@ class LoadUop(debug: Boolean = false)(implicit p: Parameters) extends Module {
     when (offsetIsEven) {
       raddr := io.baddr + dec.dram_offset
     } .otherwise {
-      raddr := io.baddr + dec.dram_offset - 4.U
+      raddr := io.baddr + dec.dram_offset - uopBytes.U
     }
   } .elsewhen (state === sReadData && xcnt === xlen && xrem =/= 0.U) {
     raddr := raddr + xmax_bytes

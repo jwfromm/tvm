@@ -19,7 +19,6 @@
 from __future__ import absolute_import as _abs
 from __future__ import print_function
 
-import logging
 import warnings
 from collections import defaultdict
 # Numpy support
@@ -34,6 +33,10 @@ from .. import op as _op
 from .. import annotation as _annotation
 from ..expr_functor import ExprMutator
 from .. import module as _module
+from .common import AttrCvt, get_relay_op
+from .common import infer_type as _infer_type
+from .common import infer_shape as _infer_shape
+from .common import infer_channels as _infer_channels
 
 __all__ = ['from_tensorflow']
 
@@ -51,142 +54,6 @@ def _infer_value(input_val, params):
     m.run()
     return m.get_output(0)
 
-def _get_relay_op(op_name):
-    try:
-        op = getattr(_op, op_name)
-    except AttributeError:
-        try:
-            op = getattr(_op.nn, op_name)
-        except AttributeError:
-            op = getattr(_op.image, op_name)
-
-    if not op:
-        raise tvm.error.OpNotImplemented(
-            'Operator {} is not supported for frontend TensorFlow.'.format(op_name))
-    return op
-
-class AttrCvt(object):
-    """Common attribute converter. An AttrConverter instance is a callable:
-    ```
-    attr_converter = AttrConverter(op_name, transforms={'a':'b', 'c':('d', 1)})
-    new_op_name, new_attr = attr_converter(attrs)
-    ```
-
-    Parameters
-    ----------
-    op_name : str or callable
-        If set as str, returned operator name is the str.
-        If set as callable, returned operator is the str returned by calling:
-        `op_name = func(attr)`
-    transforms : dict of `new_name, or (new_name, default_value, transform function)`
-        If only a new_name is provided, it's like renaming the attribute name.
-        If default_value if provided, then the attribute is considered as optional.
-        If transform function is provided, the original attribute value is handled
-        by transform function.
-    excludes : list
-        A list of excluded attributes that should `NOT` appear.
-        Raise NotImplementedError if occurred.
-    disables : list
-        A list of attributes that is disabled in relay. Log warnings.
-    ignores : list
-        A list of attributes that is ignored in relay. Debug level logging.
-    extras : dict
-        A series of additional attributes should be added anyway to the returned
-        attribute dict.
-    custom_check : callable
-        A custom function takes attribute, and return True/False.
-        Raise RuntimeError if not bool(True) returned.
-    """
-
-    def __init__(self, op_name, transforms=None,
-                 excludes=None, disables=None, ignores=None,
-                 extras=None, custom_check=None):
-        self._op_name = op_name
-        self._transforms = transforms if transforms else {}
-        self._excludes = excludes if excludes else []
-        self._disables = disables if disables else []
-        self._ignores = ignores if ignores else []
-        self._extras = extras if extras else {}
-        self._custom_check = custom_check
-
-    def __call__(self, inputs, attrs, *args):
-        self._ignores.append('_output_shapes')
-        self._ignores.append('_input_shapes')
-        self._ignores.append('T')
-        self._ignores.append('use_cudnn_on_gpu')
-        self._ignores.append('_node_name')
-        self._ignores.append('is_training')
-        self._ignores.append('_target_layout')
-
-        # apply custom check
-        if self._custom_check:
-            func, msg = self._custom_check
-            if not func(attrs):
-                raise RuntimeError("Check failed: {}".format(msg))
-        # get new op_name
-        if isinstance(self._op_name, str):
-            op_name = self._op_name
-        else:
-            assert callable(self._op_name), "op_name can either be string or callable"
-            op_name = self._op_name(attrs)
-        # convert attributes
-        new_attrs = {}
-        for k in attrs.keys():
-            if k in self._excludes:
-                raise tvm.error.OpAttributeUnimplemented(
-                    'Attribute {} in operator {} is not supported.'.format(k, op_name))
-            elif k in self._disables:
-                logging.warning("Attribute %s is disabled in relay.%s", k, op_name)
-            elif k in self._ignores:
-                logging.debug("Attribute %s is ignored in relay.%s", k, op_name)
-            elif k in self._transforms:
-                new_name, defaults, transform = self._parse_default(self._transforms[k])
-                if defaults is None:
-                    new_attr = self._required_attr(attrs, k)
-                else:
-                    new_attr = attrs.get(k, None)
-                if new_attr is None:
-                    new_attrs[new_name] = defaults
-                else:
-                    new_attrs[new_name] = transform(new_attr)
-            else:
-                # copy
-                new_attrs[k] = attrs[k]
-        # add extras
-        new_attrs.update(self._extras)
-        return _get_relay_op(op_name)(*inputs, **new_attrs)
-
-    def _parse_default(self, target):
-        """Helper function to parse default values."""
-        if not isinstance(target, (list, tuple)):
-            k, v, t = target, None, lambda x: x
-        elif len(target) == 1:
-            k, v, t = target[0], None, lambda x: x
-        elif len(target) == 2:
-            k, v, t = target[0], target[1], lambda x: x
-        elif len(target) > 2:
-            k, v, t = target[0], target[1], target[2]
-        else:
-            k = None  # should raise
-        if not isinstance(k, str):
-            msg = "{} is not a valid target, (name, default) expected.".format(target)
-            raise ValueError(msg)
-        return k, v, t
-
-    def _parse_bool(self, value):
-        """Helper function to parse default boolean values."""
-        if isinstance(value, str):
-            return value.strip().lower() in ['true', '1', 't', 'y', 'yes']
-        return bool(value)
-
-    def _required_attr(self, attr, key):
-        """Wrapper for getting required attributes."""
-        assert isinstance(attr, dict)
-        if key not in attr:
-            raise tvm.error.OpAttributeRequired(
-                'Attribute {} not found in operator {}'.format(key, self._op_name))
-        return attr[key]
-
 def _get_pad_pair(input1d, kernel1d, stride1d):
     if input1d % stride1d == 0:
         pad = max(kernel1d - stride1d, 0)
@@ -197,12 +64,6 @@ def _get_pad_pair(input1d, kernel1d, stride1d):
     pad_after = pad - pad_before
 
     return [pad_before, pad_after]
-
-def _get_name_hint(node):
-    name = ''
-    if hasattr(node, "name_hint"):
-        name = node.name_hint
-    return name
 
 def _math_name_picker(surfix):
     def _impl(attr):
@@ -224,30 +85,6 @@ def _dimension_constraint():
             return True
         return False
     return _dim_check, "Only 2d kernel supported."
-
-def _infer_channels(node, params, transpose=False):
-    """A hack for getting 'channels' or 'units' since tensorflow don't provide
-    these attributes. We check the shape of weights provided to get the number.
-    """
-    out_shape = _infer_shape(node, params)
-    channels = out_shape[0] if not transpose else out_shape[1]
-    return channels
-
-def _infer_out_shapes(inputs, params):
-    """A method to get the output shape of intermediate nodes in the relay graph."""
-    return [_infer_shape(inputs, params)]
-
-def _infer_type(node):
-    """A method to infer the type of an intermediate node in the relay graph."""
-    mod = _module.Module.from_expr(node)
-    mod = _transform.InferType()(mod)
-    entry = mod["main"]
-    return entry if isinstance(node, _expr.Function) else entry.body
-
-def _infer_shape(node, params=None):
-    """A method to get the output shape of an intermediate node in the relay graph."""
-    out_type = _infer_type(node)
-    return get_const_tuple(out_type.checked_type.shape)
 
 def _get_param(params, input_node):
     return params.pop(input_node.name_hint).asnumpy()
@@ -280,196 +117,10 @@ def _argx(func, func_name):
         return func(inputs[0], axis=axis_input_value, keepdims=False)
     return _impl
 
-def _quantize():
-    def _impl(inputs, attr, params):
-        bpu = attr['B']
-        dtype = attr['T'].name
-        q = 2.**(bpu - 1)
-        one_div_q = 1 / q
-        quantized = tvm.relay.const(one_div_q, dtype) * _op.ceil(tvm.relay.const(q, dtype) * inputs[0])
-        quantized = _op.clip(quantized, -1. + one_div_q, 1.)
-        return quantized
-
-    return _impl
-
-def _aec_get_probs():
-    def _impl(inputs, attr, params):
-        bitplanes = inputs[0]
-        feature_probs = inputs.pop(1)
-        return _op.waveone.aec_get_probs(bitplanes, feature_probs)
-
-    return _impl
-
-def _aec_encode():
-    def _impl(inputs, attr, params):
-        serialize = attr['serialize']
-        return _op.waveone.aec_encode(inputs[0], inputs[1], serialize=serialize)
-    return _impl
-
-
-def _aec_range_encode_gaussian():
-    def _impl(inputs, attr, params):
-        prequantized = inputs[0]
-        anorm = inputs[1]
-        div_anorm = inputs[2]
-        lookup = inputs.pop(3)
-        serialize = attr['serialize']
-        max_bytes_per_element = attr['max_bytes_per_element']
-        range_bits = attr['range_bits']
-        codelayer_bits = attr['codelayer_bits']
-        zero_prob_package_bits = attr['zero_prob_package_bits']
-        zero_prob_prior = attr['zero_prob_prior']
-        return _op.waveone.aec_range_encode_gaussian(
-            prequantized,
-            anorm,
-            div_anorm,
-            lookup,
-            serialize=serialize,
-            max_bytes_per_element=max_bytes_per_element,
-            range_bits=range_bits,
-            codelayer_bits=codelayer_bits,
-            zero_prob_package_bits=zero_prob_package_bits,
-            zero_prob_prior=zero_prob_prior)
-
-    return _impl
-
-
-def _aec_range_decode_gaussian():
-    def _impl(inputs, attr, params):
-        gauss_encoded = inputs[0]
-        anorm = inputs[1]
-        div_anorm = inputs[2]
-        lookup = inputs.pop(3)
-        serialize = attr['serialize']
-        max_bytes_per_element = attr['max_bytes_per_element']
-        range_bits = attr['range_bits']
-        codelayer_bits = attr['codelayer_bits']
-        zero_prob_package_bits = attr['zero_prob_package_bits']
-        zero_prob_prior = attr['zero_prob_prior']
-
-        return _op.waveone.aec_range_decode_gaussian(
-            gauss_encoded,
-            anorm,
-            div_anorm,
-            lookup,
-            serialize=serialize,
-            max_bytes_per_element=max_bytes_per_element,
-            range_bits=range_bits,
-            codelayer_bits=codelayer_bits,
-            zero_prob_package_bits=zero_prob_package_bits,
-            zero_prob_prior=zero_prob_prior)
-
-    return _impl
-
-def _aec_merge():
-    def _impl(inputs, attr, params):
-        data_tuple = _expr.Tuple(inputs)
-        return _op.waveone.aec_merge(data_tuple)
-
-    return _impl
-
-def _bitplane_decomposition():
-    def _impl(inputs, attr, params):
-        bpu = attr['B']
-        dtype = attr['T'].name
-        powb_np = 2.**(-bpu + 1.)
-        powb = tvm.relay.const(powb_np, dtype)
-        shift = tvm.relay.const(-1. + powb_np, dtype)
-        bitplanes = []
-        sign1m1 = _op.sign(inputs[0])
-        sign = (sign1m1 * tvm.relay.const(.5, dtype)) + tvm.relay.const(.5, dtype)
-        x = inputs[0] - (powb * sign)
-        x *= sign1m1
-        for b in range(bpu - 1):
-            x = tvm.relay.const(2., dtype) * x + shift
-            remainder = _op.cast(_op.greater(x, tvm.relay.const(0., dtype)), dtype)
-            x -= (shift + remainder)
-            bitplanes.append(_op.cast(remainder, 'uint8'))
-        bitplanes.append(_op.cast(sign, 'uint8'))
-        bitplanes = _op.stack(bitplanes, axis=-1)
-
-        return bitplanes
-
-    return _impl
-
-def _optical_flow():
-    def _impl(inputs, attr, params):
-        return _op.waveone.optical_flow(inputs[0], inputs[1])
-
-    return _impl
-
-def _bitplane_composition():
-    def _impl(inputs, attr, params):
-        # Extract bpu from shape.
-        bpu = attr['_input_shapes'][inputs[0]][-1]
-        powb = tvm.relay.const(2.**(-bpu + 1))
-        sign = _op.cast(_op.take(inputs[0], tvm.relay.const(bpu - 1), axis=-1),
-                        'float32')
-        sign1m1 = tvm.relay.const(2.) * sign - tvm.relay.const(1.)
-        x = tvm.relay.const(0.0)
-        for b in range(bpu - 1):
-            bit = _op.cast(
-                _op.take(inputs[0], tvm.relay.const(bpu - (b + 2)), axis=-1),
-                'float32')
-            x += bit
-            x *= tvm.relay.const(0.5)
-        x *= sign1m1
-        x += powb * sign
-        return x
-    return _impl
-
-def _aec_split():
-    def _impl(inputs, attr, params):
-        merged_code = inputs[0]
-        merged_codelen = inputs[1]
-        image_dims = inputs[2]
-        aec_params = inputs[3]
-
-        # Need to extract numpy values for input dims and aec_params
-        if isinstance(image_dims, _expr.Var):
-            image_dims_np = params[image_dims.name_hint].asnumpy()
-        # Otherwise we'll have to infer its value.
-        else:
-            image_dims_np = _infer_value(image_dims, params).asnumpy()
-
-        if isinstance(aec_params, _expr.Var):
-            aec_params_np = params[aec_params.name_hint].asnumpy()
-        else:
-            aec_params_np = _infer_value(aec_params, params).asnumpy()
-
-        # Compute output shapes.
-        def get_aec_shapes(image_dims, N, aec_params):
-            num_aec = aec_params.shape[0]
-            aec_shapes = []
-            for i in range(num_aec):
-                ratio, channels, bitplanes = aec_params[i]
-                output_shape = [
-                    N, channels,
-                    int(image_dims[0] / ratio),
-                    int(image_dims[1] / ratio)
-                ]
-                if bitplanes > 1:
-                    output_shape = output_shape + [bitplanes]
-                aec_shapes.append(output_shape)
-            return aec_shapes
-
-        N = attr['_input_shapes'][merged_code][0]
-        output_shapes = get_aec_shapes(image_dims_np, N, aec_params_np)
-
-        return _op.waveone.aec_split(merged_code, merged_codelen, image_dims, aec_params, output_shapes)
-
-    return _impl
-
-def _aec_decode():
-    def _impl(inputs, attr, params):
-        serialize = attr['serialize']
-        return _op.waveone.aec_decode(inputs[0], inputs[1], serialize=serialize)
-    return _impl
-
 def _elemwise(name):
     def _impl(inputs, attr, params):
         assert len(inputs) == 2, "{} take 2 inputs, {} given".format(name, len(inputs))
-        return _get_relay_op(name)(*inputs)
+        return get_relay_op(name)(*inputs)
     return _impl
 
 def _pooling(name):
@@ -489,7 +140,7 @@ def _pooling(name):
         else:
             msg = 'Value {} of attribute "data_format" of operator Pooling ' \
                   'is not valid.'
-            raise tvm.error.OpAttributeInvalid(msg.format(attrs['data_format']))
+            raise tvm.error.OpAttributeInvalid(msg.format(attr['data_format']))
 
         if attr['_target_layout'] == "NCHW" and attr['data_format'] == "NHWC":
             tmp_shape = attr['_input_shapes'][inputs[0]]
@@ -706,7 +357,7 @@ def _crop_and_resize():
         attrs['size'] = crop_size
         attrs['layout'] = 'NHWC'
         if method.lower() == 'nearest':
-            raise tvm.error.OpAttributeUnimplemented(
+            raise tvm.error.OpAttributeUnImplemented(
                 'Attribute method=nearest is not supported')
         else:
             attrs['align_corners'] = True
@@ -728,7 +379,7 @@ def _crop_and_resize():
             res_crop = _op.strided_slice(inputs[0], begin=begin, end=size)
 
             # 2) Resize
-            res_resize = _get_relay_op('resize')(res_crop, **attrs)
+            res_resize = get_relay_op('resize')(res_crop, **attrs)
             out = _op.concatenate([out, res_resize], axis=0) if out else res_resize
         return out
     return _impl
@@ -787,7 +438,7 @@ def _check_numerics():
 
 def _matmul():
     def _impl(inputs, attr, params):
-        channels = _infer_channels(inputs[1], params, not attr['transpose_b'])
+        channels = _infer_channels(inputs[1], not attr['transpose_b'])
         if attr['transpose_a']:
             inputs[0] = _op.transpose(inputs[0], axes=(1, 0))
         if not attr['transpose_b']:
@@ -798,9 +449,14 @@ def _matmul():
 
     return _impl
 
-def _undef():
+def _batch_matmul():
     def _impl(inputs, attr, params):
-        return _sym.__undef__()
+        adj_x = attr['adj_x']
+        adj_y = attr['adj_y']
+        input_x = _op.transpose(inputs[0], axes=[0, 2, 1]) if adj_x else inputs[0]
+        input_y = _op.transpose(inputs[1], axes=[0, 2, 1]) if not adj_y else inputs[1]
+        ret = get_relay_op('batch_matmul')(input_x, input_y)
+        return ret
     return _impl
 
 def _identity():
@@ -1053,14 +709,9 @@ def _fill():
     def _impl(inputs, attr, params):
         output_shape = attr['_output_shapes'][0]
         # Output shape must be defined to avoid errors. If any axis is not, we must
-        # try to find or compute its shape.
-        if -1 in output_shape:
-            # First lets check if the input is a free variable in params.
-            if isinstance(inputs[0], _expr.Var):
-                output_shape = params[inputs[0].name_hint].asnumpy().reshape([-1]).tolist()
-            # Otherwise we'll have to infer its value.
-            else:
-                output_shape = _infer_value(inputs[0], params).asnumpy().reshape([-1]).tolist()
+        # try to compute its shape.
+        if output_shape is None or -1 in output_shape:
+            output_shape = _infer_value(inputs[0], params).asnumpy().reshape([-1]).tolist()
 
         fill_arg = _get_num_param(params, inputs.pop(1))
         dtype = attr['T'].name
@@ -1229,7 +880,7 @@ def _stridedSlice():
         if begin_mask or end_mask or ellipsis_mask or new_axis_mask or shrink_axis_mask:
             begin, end, stride, fshape_indices = _transform_mask(stride_dim, ellipsis_mask)
         out = _op.strided_slice(inputs[0], begin=begin, end=end, strides=stride)
-        out_shape = _infer_shape(out, params)
+        out_shape = _infer_shape(out)
         if not fshape_indices:
             fshape_indices = range(len(out_shape))
 
@@ -1445,8 +1096,8 @@ def _softplus():
         exp_out = AttrCvt('exp')(inputs, attr)
         inputs.append(tvm.relay.const(1, attr['T'].name))
         rh = tvm.relay.const(1, attr['T'].name)
-        add_out = _get_relay_op('add')(exp_out, rh)
-        return _get_relay_op('log')(add_out)
+        add_out = get_relay_op('add')(exp_out, rh)
+        return get_relay_op('log')(add_out)
     return _impl
 
 def _topk():
@@ -1506,7 +1157,7 @@ def _space_to_batch_nd():
         axes = [2 * i + 2 for i in range(M)] + [0] + [2 * i + 1 for i in range(M)] + \
                list(range(1 + 2 * M, 1 + 2 * M + remaining_shape_length))
         permuted_reshaped_padded = tvm.relay.transpose(reshaped_padded, axes=axes)
-        permuted_reshaped_padded_shape = _infer_shape(permuted_reshaped_padded, params)
+        permuted_reshaped_padded_shape = _infer_shape(permuted_reshaped_padded)
         # Reshape permuted_reshaped_padded to flatten block_shape into the batch dimension,
         # producing an output tensor of shape:
         # [batch * prod(block_shape)] + [padded_shape[1] / block_shape[0], ...,
@@ -1549,7 +1200,7 @@ def _batch_to_space_nd():
         # [batch / prod(block_shape), input_shape[1] * block_shape[0] - crops[0,0] - crops[0,1],
         #  ..., input_shape[M] * block_shape[M-1] - crops[M-1,0] - crops[M-1,1],
         #  input_shape[M+1], ..., input_shape[N-1]]
-        reshaped_permuted_shape = _infer_shape(reshaped_permuted, params)
+        reshaped_permuted_shape = _infer_shape(reshaped_permuted)
         cropped = reshaped_permuted
         for axis in range(1, M+1):
             crop = crops[axis - 1]
@@ -1573,6 +1224,13 @@ def _prod():
         return _op.prod(inputs[0], int(axis), keepdims=keepdims)
     return _impl
 
+def _log1p():
+    # op description: https://www.tensorflow.org/api_docs/python/tf/math/log1p
+    def _impl(inputs, attr, params):
+        one = tvm.relay.const(1, attr['T'].name)
+        add_out = get_relay_op('add')(inputs[0], one)
+        return get_relay_op('log')(add_out)
+    return _impl
 
 # compatible operators that do NOT require any conversion.
 _identity_list = []
@@ -1594,13 +1252,14 @@ _convert_map = {
     'BitplaneComposition'               : _bitplane_composition(),
     'BitplaneDecomposition'             : _bitplane_decomposition(),
     'OpticalFlow'                       : _optical_flow(),
-    'MirrorPad'                         : _mirror_pad(),
     'Abs'                               : AttrCvt('abs'),
     'Add'                               : _elemwise('add'),
     'All'                               : _reduce('all'),
     'ArgMax'                            : _argx(_op.argmax, 'argmax'),
     'ArgMin'                            : _argx(_op.argmin, 'argmin'),
     'AvgPool'                           : _pooling('avg_pool'),
+    'BatchMatMul'                       : _batch_matmul(),
+    'BatchMatMulV2'                     : _batch_matmul(),
     'BatchNormWithGlobalNormalization'  : _batch_norm(),
     'BatchToSpaceND'                    : _batch_to_space_nd(),
     'BiasAdd'                           : _bias_add(),
@@ -1636,6 +1295,9 @@ _convert_map = {
     'Less'                              : _broadcast('less'),
     'LessEqual'                         : _broadcast('less_equal'),
     'Log'                               : AttrCvt('log'),
+    'Log1p'                             : _log1p(),
+    'Cos'                               : AttrCvt('cos'),
+    'Sin'                               : AttrCvt('sin'),
     'LogicalAnd'                        : _logical('logical_and'),
     'LogicalOr'                         : _logical('logical_or'),
     'LogicalNot'                        : _logical('logical_not'),
@@ -1648,6 +1310,7 @@ _convert_map = {
     'Mean'                              : _mean(),
     'Min'                               : _reduce('min'),
     'Minimum'                           : _elemwise('minimum'),
+    'MirrorPad'                         : _mirror_pad(),
     'Mod'                               : _elemwise('mod'),
     'Mul'                               : _elemwise('multiply'),
     'Neg'                               : AttrCvt('negative'),
@@ -2325,17 +1988,6 @@ class GraphProto(object):
                 # Pass the target layout
                 attr["_target_layout"] = layout
 
-                #ToDo: Some of the tensorflow operators internaly maintain
-                #execution layers and its output name will the layer number along with
-                #graph node name.eg: Node name:- 'Model/RNN/cell_0/RnnCell', but the
-                #output name will be 'Model/RNN/cell_0/RnnCell:0'. In this case,
-                #the digit has to be ignored.
-
-                # I think this is undesirable for now. Maybe special case RNNs?
-                #if ":" in node.input[0]:
-                #    in_name, _ = node.input[0].split(':')
-                #    node.input[0] = in_name
-
                 # Fill shapes for all inputs in a list
                 inputs = []
                 for i in node.input:
@@ -2368,12 +2020,6 @@ class GraphProto(object):
                                                              control_flow_node_map)
                 else:
                     op = self._convert_operator(node.op, inputs, attr, graph)
-
-                    name = node.name.split('/')[-1]
-                    if name == 'EnterInteger':
-                        op = _annotation.annotate(op, note='EnterInteger')
-                    elif name == 'ExitInteger':
-                        op = _annotation.annotate(op, note='EndInteger')
 
                 # Check if op is converted to param
                 if isinstance(op, np.ndarray):
@@ -2690,7 +2336,7 @@ class GraphProto(object):
         convert_map = convert_map if convert_map else _convert_map
         convert_map_rnn = _convert_map_rnn
         if op_name in identity_list:
-            sym = _get_relay_op(op_name)(*inputs, **attrs)
+            sym = get_relay_op(op_name)(*inputs, **attrs)
         elif op_name in convert_map:
             sym = convert_map[op_name](inputs, attrs, self._params)
         elif op_name in convert_map_rnn:

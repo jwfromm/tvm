@@ -14,7 +14,7 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-# pylint: disable=invalid-name
+# pylint: disable=invalid-name,arguments-differ,no-else-return,unused-argument,missing-docstring
 """
 Relay pass transformation infrastructure.
 """
@@ -22,7 +22,9 @@ import types
 import inspect
 import functools
 
+import tvm
 from tvm._ffi.runtime_ctypes import TVMContext
+from tvm import relay
 from . import _transform
 from .base import RelayNode, register_relay_node
 from .. import nd as _nd
@@ -248,6 +250,30 @@ class Sequential(Pass):
                                             passes, opt_level, name, required)
 
 
+def infer_type(expr, mod=None):
+    """Infer the type of an expr.
+    Adding Function into a Module will change it's binding,
+    and some passes need type inference to work without binding modification.
+    However, InferType() work by putting stuff into a Module, thus changing all the binding.
+
+    This is an escape patch that allow type inference without binding changing.
+
+    Parameters
+    ----------
+    expr : tvm.relay.Expr
+        The input expression.
+
+    mod : Optional[tvm.relay.Module]
+        The input module
+
+    Returns
+    -------
+    ret : tvm.relay.Expr
+        The output expression.
+    """
+    return _transform.infer_type(expr, mod)
+
+
 def InferType():
     """Infer the type of an expr.
 
@@ -409,6 +435,21 @@ def AlterOpLayout():
         The registered pass that alters the layout of operators.
     """
     return _transform.AlterOpLayout()
+
+
+def Legalize():
+    """Legalizes an expression with another expression.
+    This pass can be used to replace an expr with another expr for target
+    dependent optimizations. For example, one expr, though semnatically
+    equivalent to the other, can have better performance on a target. This pass
+    can be used to legalize the expr in a target-dependent manner.
+
+    Returns
+    -------
+    ret : tvm.relay.Pass
+        The registered pass that rewrites an expr.
+    """
+    return _transform.Legalize()
 
 
 def RewriteAnnotatedOps(fallback_device):
@@ -884,3 +925,40 @@ def function_pass(pass_func=None, opt_level=None, name=None, required=None):
     if pass_func:
         return create_function_pass(pass_func)
     return create_function_pass
+
+@function_pass(opt_level=1)
+class ChangeBatch:
+    """
+    Change the batch size.
+
+    Parameters
+    ----------
+    data: Dict[relay.Var, int]
+      A dictionary of all the params to change.
+      The keys are all params, and the values are which dimension hold the batch.
+
+    batch_size: int
+      The batch size to change to.
+
+    Returns
+    -------
+    pass: FunctionPass
+      The pass.
+    """
+    def __init__(self, data, batch_size=16):
+        self.data = data
+        self.batch_size = batch_size
+
+    def transform_function(self, func, mod, ctx):
+        func = relay.Function(func.params, func.body, None, func.type_params, func.attrs)
+        change_batch = self
+        class ChangeBatchMutator(tvm.relay.ExprMutator):
+            def visit_var(self, var):
+                if var in change_batch.data:
+                    ty = var.type_annotation
+                    new_shape = list(ty.shape)
+                    new_shape[change_batch.data[var]] = change_batch.batch_size
+                    return relay.Var(var.name_hint, relay.TensorType(new_shape, ty.dtype))
+                else:
+                    return var
+        return ChangeBatchMutator().visit(func)

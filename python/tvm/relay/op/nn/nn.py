@@ -327,6 +327,88 @@ def avg_pool2d(data,
     return _make.avg_pool2d(data, pool_size, strides, padding,
                             layout, ceil_mode, count_include_pad)
 
+def max_pool2d_grad(out_grad,
+                    data,
+                    pool_size=(1, 1),
+                    strides=(1, 1),
+                    padding=(0, 0),
+                    layout="NCHW",
+                    ceil_mode=False):
+    r"""Gradient of 2D maximum pooling operator.
+
+    This operator takes out_grad and data as input and calculates gradient of max_pool2d.
+
+    Parameters
+    ----------
+    out_grad : tvm.relay.Expr
+        The output gradient
+
+    data : tvm.relay.Expr
+        The input data to the operator.
+
+    strides : tuple of int, optional
+        The strides of pooling.
+
+    padding : tuple of int, optional
+        The padding for pooling.
+
+    layout : str, optional
+        Layout of the input.
+
+    ceil_mode : bool, optional
+        To enable or disable ceil while pooling.
+
+    Returns
+    -------
+    result : tvm.relay.Expr
+        The computed result.
+    """
+    return _make.max_pool2d_grad(out_grad, data, pool_size, strides, padding,
+                                 layout, ceil_mode)
+
+def avg_pool2d_grad(out_grad,
+                    data,
+                    pool_size=(1, 1),
+                    strides=(1, 1),
+                    padding=(0, 0),
+                    layout="NCHW",
+                    ceil_mode=False,
+                    count_include_pad=False):
+    r"""Gradient of 2D average pooling operator.
+
+    This operator takes out_grad and data as input and calculates gradient of avg_pool2d.
+
+    Parameters
+    ----------
+    out_grad : tvm.relay.Expr
+        The output gradient
+
+    data : tvm.relay.Expr
+        The input data to the operator.
+
+    strides : tuple of int, optional
+        The strides of pooling.
+
+    padding : tuple of int, optional
+        The padding for pooling.
+
+    layout : str, optional
+        Layout of the input.
+
+    ceil_mode : bool, optional
+        To enable or disable ceil while pooling.
+
+    count_include_pad : bool, optional
+        To include padding to compute the average.
+
+    Returns
+    -------
+    result : tvm.relay.Expr
+        The computed result.
+    """
+    return _make.avg_pool2d_grad(out_grad, data, pool_size, strides, padding,
+                                 layout, ceil_mode, count_include_pad)
+
 def global_max_pool2d(data,
                       layout="NCHW"):
     r"""2D global maximum pooling operator.
@@ -811,7 +893,7 @@ def batch_norm(data,
         Specify along which shape axis the channel is specified.
 
     epsilon : double, optional, default=1e-5
-        Small float added to variance to avoid diving by zero.
+        Small float added to variance to avoid dividing by zero.
 
     center : boolean, optional, default=True
         If True, add offset of beta to normalized tensor, If False,
@@ -841,6 +923,64 @@ def batch_norm(data,
     return TupleWrapper(result, 3)
 
 
+def layer_norm(data,
+               gamma,
+               beta,
+               axis=-1,
+               epsilon=1e-5,
+               center=True,
+               scale=True):
+    r"""
+    Layer normalization (Lei Ba and et al., 2016).
+    Applies layer normalization to the n-dimensional input array.
+    This operator takes an n-dimensional input array and normalizes
+    the input using the given axis:
+
+    .. math::
+
+        out = \frac{data - mean(data, axis)}{\sqrt{var(data, axis)+\epsilon}}
+            * gamma + beta
+
+    Unlike batch normalization, the mean and var are computed along the channel dimension.
+
+    Assume the input has size k on axis 1, then both gamma and beta have shape (k,).
+
+    .. note::
+
+        This operator can be optimized away for inference.
+
+    Parameters
+    ----------
+    data : tvm.relay.Expr
+        Input to which batch_norm will be applied.
+
+    gamma : tvm.relay.Expr
+        The gamma scale factor.
+
+    beta : tvm.relay.Expr
+        The beta offset factor.
+
+    axis : int, optional, default=-1
+        The axis that should be normalized, typically the axis of the channels.
+
+    epsilon : double, optional, default=1e-5
+        Small float added to variance to avoid dividing by zero.
+
+    center : boolean, optional, default=True
+        If True, add offset of beta to normalized tensor, If False,
+        beta is ignored.
+
+    scale : boolean, optional, default=True
+        If True, multiply by gamma. If False, gamma is not used.
+
+    Returns
+    -------
+    result : tvm.relay.Expr
+        The normalized data.
+    """
+    return _make.layer_norm(data, gamma, beta, axis, epsilon, center, scale)
+
+
 def batch_matmul(x, y):
     r"""
     Computes batch matrix multiplication of `x` and `y` when `x` and `y` are data
@@ -865,6 +1005,66 @@ def batch_matmul(x, y):
     """
     return _make.batch_matmul(x, y)
 
+def sparse_dense(data, weight):
+    r"""
+    Computes the matrix multiplication of `data` and `weight`, where `data` is
+    a dense matrix and `weight` is a sparse (either BSR or CSR) namedtuple with
+    fields `data`, `indices`, and `indptr`.
+
+    .. math::
+
+        \mbox{sparse_dense}(data, weight)[m, n] = \mbox{matmul}(x, \mbox{as_dense}(weight)^T)[m, n]
+
+    where `as_dense` returns dense equivalent of the given sparse matrix.
+
+    See
+    https://docs.scipy.org/doc/scipy/reference/generated/scipy.sparse.csr_matrix.html
+    and
+    https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.sparse.bsr_matrix.html
+    for more detail on the sparse matrix representation.
+
+    Parameters
+    ----------
+    data : tvm.relay.Expr
+        The input data for the matrix multiplication
+
+    weight : namedtuple.
+        The sparse weight matrix for the matrix multiplication.
+
+    Returns
+    -------
+    result: tvm.relay.Expr
+        The computed result.
+    """
+    return _make.sparse_dense(data, weight.data, weight.indices, weight.indptr)
+
+def sparse_transpose(x):
+    r"""
+    Computes the fast matrix transpose of x,
+    where x is a sparse tensor in CSR format (represented as a namedtuple
+    with fields `data`, `indices`, and `indptr`).
+
+    ** Currently only support Square Matrices **
+
+    .. math::
+
+        \mbox{sparse_transpose}(x)[n, n] = (x^T)[n, n]
+
+    Please refer to https://github.com/scipy/scipy/blob/v1.3.0/scipy/sparse/csr.py
+    for the algorithm implemented in this operator.
+
+    Parameters
+    ----------
+    x : namedtuple.
+        The sparse weight matrix for the fast matrix transpose.
+
+    Returns
+    -------
+    result : relay.Tuple([tvm.relay.Expr, tvm.relay.Expr, tvm.relay.Expr])
+        Tuple of output sparse tensor (same shape and format as input),
+        i.e. if CSR then output is in ([data, indices, indptr]) form
+    """
+    return TupleWrapper(_make.sparse_transpose(x.data, x.indices, x.indptr), 3)
 
 def contrib_conv2d_winograd_without_weight_transform(data,
                                                      weight,

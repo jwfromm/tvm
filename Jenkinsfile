@@ -39,9 +39,9 @@
 // - Periodically cleanup the old versions on local workers
 //
 ci_lint = "tvmai/ci-lint:v0.51"
-ci_gpu = "tvmai/ci-gpu:v0.53"
-ci_cpu = "tvmai/ci-cpu:v0.51"
-ci_i386 = "tvmai/ci-i386:v0.51"
+ci_gpu = "tvmai/ci-gpu:v0.54"
+ci_cpu = "tvmai/ci-cpu:v0.52"
+ci_i386 = "tvmai/ci-i386:v0.52"
 
 // tvm libraries
 tvm_runtime = "build/libtvm_runtime.so, build/config.cmake"
@@ -53,7 +53,7 @@ tvm_multilib = "build/libtvm.so, " +
 // command to start a docker container
 docker_run = 'docker/bash.sh'
 // timeout in minutes
-max_time = 60
+max_time = 120
 
 // initialize source codes
 def init_git() {

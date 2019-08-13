@@ -15,9 +15,9 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-PROJROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../../" && pwd )"
 
+set -e
+set -u
+set -o pipefail
 
-export PYTHONPATH=${PYTHONPATH}:${PROJROOT}/python:${PROJROOT}/vta/python
-export PYTHONPATH=${PYTHONPATH}:/home/xilinx/pynq
-python3 -m vta.exec.rpc_server --tracker fleet:9190 --key pynq
+pip3 install dgl

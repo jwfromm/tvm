@@ -17,11 +17,12 @@
 #pylint: disable=invalid-name, unused-argument
 """Backend compiler related feature registration"""
 from __future__ import absolute_import
-from ..expr import const
+from ..expr import const, Tuple, TupleGetItem
 from .op import register_gradient
 from .transform import collapse_sum_like, broadcast_to_like, where
-from .tensor import exp, negative, power, less
+from .tensor import exp, negative, power, less, cos, sin
 from .tensor import zeros_like, ones_like
+from . import nn as _nn
 
 
 @register_gradient("log")
@@ -30,6 +31,18 @@ def log_grad(orig, grad):
     x = orig.args[0]
     return [grad * ones_like(x) / x]
 
+@register_gradient("cos")
+def cos_grad(orig, grad):
+    """Returns [grad * (-sin(x))]"""
+    x = orig.args[0]
+    ones = ones_like(x)
+    return [grad * (-ones * sin(x))]
+
+@register_gradient("sin")
+def sin_grad(orig, grad):
+    """Returns [grad * cos(x)]"""
+    x = orig.args[0]
+    return [grad * cos(x)]
 
 @register_gradient("exp")
 def exp_grad(orig, grad):
@@ -146,3 +159,31 @@ def clip_grad(orig, grad):
     zeros = zeros_like(x)
     ones = ones_like(x)
     return [where(less(x, a_mins), zeros, where(less(a_maxs, x), zeros, ones * grad))]
+
+@register_gradient("nn.max_pool2d")
+def max_pool2d_grad(orig, grad):
+    attrs = orig.attrs
+    pool_grad = _nn.max_pool2d_grad(grad, orig.args[0], pool_size=attrs.pool_size,
+                                    strides=attrs.strides, padding=attrs.padding,
+                                    layout=attrs.layout, ceil_mode=attrs.ceil_mode)
+    return [pool_grad]
+
+@register_gradient("nn.avg_pool2d")
+def avg_pool2d_grad(orig, grad):
+    attrs = orig.attrs
+    pool_grad = _nn.avg_pool2d_grad(grad, orig.args[0], pool_size=attrs.pool_size,
+                                    strides=attrs.strides, padding=attrs.padding,
+                                    layout=attrs.layout, ceil_mode=attrs.ceil_mode,
+                                    count_include_pad=attrs.count_include_pad)
+    return [pool_grad]
+
+# not implemented, this is only for testing.
+@register_gradient("concatenate")
+def concatenate_grad(orig, grad):
+    assert len(orig.args) == 1
+    t = orig.args[0]
+    x = TupleGetItem(t, 0)
+    y = TupleGetItem(t, 1)
+    # Assume only two element in tuple rn.
+    # In the real implementation, concatenate_grad probably need to be implemented by an operator.
+    return [Tuple([zeros_like(x), zeros_like(y)])]

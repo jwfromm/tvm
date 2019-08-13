@@ -97,6 +97,37 @@ RELAY_REGISTER_OP("cast")
 .set_attr<TOpPattern>("TOpPattern", kElemWise)
 .set_attr<FInferCorrectLayout>("FInferCorrectLayout", ElemwiseArbitraryLayout);
 
+Array<Tensor> ReinterpretCompute(const Attrs& attrs, const Array<Tensor>& inputs,
+                                 const Type& out_type, const Target& target) {
+  const CastAttrs* param = attrs.as<CastAttrs>();
+  CHECK(param != nullptr);
+  DataType dtype = param->dtype;
+  return {topi::reinterpret(inputs[0], dtype)};
+}
+
+Expr MakeReinterpret(Expr data, DataType dtype) {
+  auto attrs = make_node<CastAttrs>();
+  attrs->dtype = dtype;
+  static const Op& op = Op::Get("reinterpret");
+  return CallNode::make(op, {data}, Attrs(attrs), {});
+}
+
+TVM_REGISTER_API("relay._make.reinterpret").set_body([](const TVMArgs& args, TVMRetValue* rv) {
+  runtime::detail::unpack_call<Expr, 2>(MakeReinterpret, args, rv);
+});
+
+RELAY_REGISTER_OP("reinterpret")
+    .describe(R"code(Reinterpret the data into a new data type.
+)code" TVM_ADD_FILELINE)
+    .set_num_inputs(1)
+    .set_attrs_type_key("relay.attrs.CastAttrs")
+    .add_argument("data", "Tensor", "The input tensor.")
+    .set_support_level(3)
+    .add_type_rel("Reinterpret", CastRel)
+    .set_attr<FTVMCompute>("FTVMCompute", ReinterpretCompute)
+    .set_attr<TOpPattern>("TOpPattern", kElemWise)
+    .set_attr<FInferCorrectLayout>("FInferCorrectLayout", ElemwiseArbitraryLayout);
+
 // relay.expand_dims
 TVM_REGISTER_NODE_TYPE(ExpandDimsAttrs);
 
@@ -234,7 +265,7 @@ bool ConcatenateRel(const Array<Type>& types,
   }
   axis = axis < 0 ? ndim + axis : axis;
   // Calculate shape
-  std::vector<IndexExpr>&& oshape = AsVector(first->shape);
+  std::vector<IndexExpr> oshape(first->shape.begin(), first->shape.end());
   IndexExpr &concat_dim = oshape[axis];
   bool has_any = false;
   if (concat_dim.as<Any>()) {
@@ -803,7 +834,7 @@ bool TakeRel(const Array<Type>& types,
   CHECK(param != nullptr);
 
   if (!param->axis.defined()) {
-    std::vector<IndexExpr>&& oshape = AsVector(indices->shape);
+    std::vector<IndexExpr> oshape(indices->shape.begin(), indices->shape.end());
     reporter->Assign(types[2], TensorTypeNode::make(oshape, data->dtype));
     return true;
   }
@@ -1420,9 +1451,10 @@ bool WhereRel(const Array<Type>& types,
     CHECK(reporter->AssertEQ(x_shape[i], y_shape[i]))
         << "x and y must have the same shape: " << x_shape << " vs " << y_shape;
 
-    CHECK(reporter->AssertEQ(cond_shape[i], x_shape[i]))
-        << "Shape of condition " << condition->shape
-        << " must be either equal to x or has dimension of 1.";
+    if (i < cond_shape.size()) {
+        CHECK(reporter->AssertEQ(cond_shape[i], x_shape[i]))
+        << "condition and x must have the same shape: " << cond_shape << " vs " << x_shape;
+    }
   }
   reporter->Assign(types[3], TensorTypeNode::make(x_shape, x->dtype));
   return true;
@@ -1959,7 +1991,7 @@ bool SplitRel(const Array<Type>& types,
         << "indices_or_sections need to be able to divide input.shape[axis]";
     std::vector<Type> fields;
     for (int i = 0; i < sections->value; ++i) {
-        std::vector<IndexExpr>&& oshape = AsVector(data->shape);
+        std::vector<IndexExpr> oshape(data->shape.begin(), data->shape.end());
         oshape[axis] /= int32_t(sections->value);
         auto vec_type = TensorTypeNode::make(oshape, data->dtype);
         fields.push_back(vec_type);
@@ -1972,7 +2004,7 @@ bool SplitRel(const Array<Type>& types,
     for (unsigned int i = 0; i < indices.size(); ++i) {
       CHECK(reporter->Assert(IndexExpr(indices[i]) > begin))
           << "indices_or_sections need to be a sorted ascending list";
-      std::vector<IndexExpr>&& oshape = AsVector(data->shape);
+      std::vector<IndexExpr> oshape(data->shape.begin(), data->shape.end());
       oshape[axis] = IndexExpr(indices[i]) - begin;
       begin = IndexExpr(indices[i]);
       auto vec_type = TensorTypeNode::make(oshape, data->dtype);
@@ -1980,7 +2012,7 @@ bool SplitRel(const Array<Type>& types,
     }
     CHECK(reporter->Assert(begin < data->shape[axis]))
         << "The sum of sections must match the input.shape[axis]";
-    std::vector<IndexExpr>&& oshape = AsVector(data->shape);
+    std::vector<IndexExpr> oshape(data->shape.begin(), data->shape.end());
     oshape[axis] = data->shape[axis] - begin;
     auto vec_type = TensorTypeNode::make(oshape, data->dtype);
     fields.push_back(vec_type);
@@ -2074,9 +2106,9 @@ bool SliceLikeRel(const Array<Type>& types,
   const auto param = attrs.as<SliceLikeAttrs>();
   CHECK(param != nullptr);
 
-  const Array<IndexExpr> dshape = data->shape;
-  const Array<IndexExpr> target_shape = target->shape;
-  std::vector<IndexExpr>&& oshape = AsVector(dshape);
+  const Array<IndexExpr>& dshape = data->shape;
+  const Array<IndexExpr>& target_shape = target->shape;
+  std::vector<IndexExpr> oshape(dshape.begin(), dshape.end());
 
   if (!param->axes.defined()) {
     for (size_t i = 0; i < dshape.size(); ++i) {
@@ -2301,7 +2333,7 @@ bool GatherNDRel(const Array<Type>& types,
     return false;
   }
   const size_t ndim = data->shape.size();
-  const IntImm* mdim = data->shape[0].as<IntImm>();
+  const IntImm* mdim = indices->shape[0].as<IntImm>();
   const size_t kdim = indices->shape.size() - 1;
   CHECK(size_t(mdim->value) <= ndim)
         << "GatherND: indices shape does satisfy.";
