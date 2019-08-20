@@ -658,9 +658,13 @@ def _convert_padding(inexpr, keras_layer, _):
                       pad_width=((0, 0), (0, 0), (top, bottom), (left, right)))
 
 
-def _convert_concat(inexpr, keras_layer, _):
+def _convert_concat(inexpr, keras_layer, etab):
     _check_data_format(keras_layer)
-    return _op.concatenate(_as_list(inexpr), axis=keras_layer.axis)
+    if etab.data_layout == 'NHWC':
+        axis = -1
+    else:
+        axis = 1
+    return _op.concatenate(_as_list(inexpr), axis=axis)
 
 
 def _convert_reshape(inexpr, keras_layer, _):
