@@ -660,7 +660,7 @@ def _convert_padding(inexpr, keras_layer, _):
 
 def _convert_concat(inexpr, keras_layer, _):
     _check_data_format(keras_layer)
-    return _op.concatenate(_as_list(inexpr), axis=1)
+    return _op.concatenate(_as_list(inexpr), axis=keras_layer.axis)
 
 
 def _convert_reshape(inexpr, keras_layer, _):
