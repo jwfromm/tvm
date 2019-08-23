@@ -597,7 +597,7 @@ def _resize_bilinear():
 
         return _annotation.stop_fusion(AttrCvt(op_name="resize",
                        ignores=['Tdim'],
-                       extras={'method': "bilinear"})(inputs, attr)
+                       extras={'method': "bilinear"})(inputs, attr))
     return _impl
 
 def _resize_nearest_neighbor():
