@@ -559,13 +559,13 @@ class Upsample(OnnxOpConverter):
         assert len(scales) == 4 and scales[0] == 1.0 and scales[1] == 1.0 and scales[2] == scales[3]
         mode = attr.get('mode')
         if mode == b'nearest':
-            method = "NEAREST_NEIGHBOR"
+            method = "nearest_neighbor"
         elif mode == b'linear':
-            method = "BILINEAR"
+            method = "bilinear"
         else:
             raise tvm.error.OpAttributeInvalid(
                 'Value {} in attribute "mode" of operator Upsample is not valid.'.format(mode))
-        attr = {'scale':int(scales[-1]), 'method':method, 'layout':'NCHW'}
+        attr = {'scale':int(scales[-1]), 'method':method, 'layout':'NCHW', 'align_corners':True}
         return AttrCvt('upsampling')(inputs, attr)
 
 
@@ -850,6 +850,18 @@ class ConstantFill(OnnxOpConverter):
             shape = shape + attr.pop('extra_shape')
         return _op.full(inputs[0], shape)
 
+class Sign(OnnxOpConverter):
+    """ Operator converter for Sign.
+    """
+    @classmethod
+    def _impl_v1(cls, inputs, attr, params):
+        return _op.sign(inputs[0])
+
+class Equal(Elemwise):
+    """ Operator converter for Equal.
+    """
+    name = 'equal'
+
 # compatible operators that do NOT require any conversion.
 _identity_list = []
 
@@ -964,6 +976,8 @@ def _get_convert_map(opset):
         'Unsqueeze': Unsqueeze.get_converter(opset),
         'Pad': Pad.get_converter(opset),
         'Shape': Shape.get_converter(opset),
+        'Sign': Sign.get_converter(opset),
+        'Equal': Equal.get_converter(opset)
     }
 
 
