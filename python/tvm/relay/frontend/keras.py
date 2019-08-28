@@ -468,8 +468,10 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
     weight = _op.cast(etab.new_const(weight), 'int16')
     if etab.data_layout == 'NCHW':
         q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=0, pack_type='uint8')
+        kernel_layout = 'OIHW'
     else:
         q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=2, bit_axis=2, pack_type='uint8')
+        kernel_layout = 'HWIO'
     params = {'weight': q_weight,
               'kernel_size': [kernel_h, kernel_w],
               'strides': [stride_h, stride_w],
@@ -478,6 +480,7 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
               'weight_bits': 1,
               'out_dtype': 'int16',
               'pack_dtype': 'uint8',
+              'kernel_layout': kernel_layout,
               'data_layout': etab.data_layout}
     params['channels'] = n_filters
     if keras_layer.padding == 'valid':
@@ -584,6 +587,7 @@ def compute_shift_scale(variance, mean, epsilon, previous_weights, bits):
     return total_right_shift, total_offset
 
 def _convert_shiftnorm(inexpr, keras_layer, etab):
+    return inexpr
     weightList = keras_layer.get_weights()
     # Weight 0 is previous layer kernel.
     mean = weightList[1]
