@@ -200,15 +200,28 @@ def _convert_convolution(inexpr, keras_layer, etab):
     is_deconv = type(keras_layer).__name__ == 'Conv2DTranspose'
     is_depthconv = type(keras_layer).__name__ == 'DepthwiseConv2D'
     weightList = keras_layer.get_weights()
+    if etab.data_layout == 'NHWC':
+        kernel_layout = 'HWIO'
+    else:
+        kernel_layout = 'OIHW'
+
+    weight = weightList[0]
     if is_deconv:
         kernel_h, kernel_w, n_filters, in_channels = weightList[0].shape
-        weight = weightList[0].transpose([3, 2, 0, 1])
+        if kernel_layout == 'OIHW':
+            weight = weight.transpose([3, 2, 0, 1])
     elif is_depthconv:
         kernel_h, kernel_w, in_channels, depth_mult = weightList[0].shape
-        weight = weightList[0].transpose([2, 3, 0, 1])
-    else:
+        if kernel_layout == 'OIHW':
+            weight = weight.transpose([2, 3, 0, 1])
+        else:
+            weight = weight.transpose([0, 1, 3, 2])
+    elif etab.data_layout == 'NCHW':
         kernel_h, kernel_w, in_channels, n_filters = weightList[0].shape
         weight = weightList[0].transpose([3, 2, 0, 1])
+    else:
+        kernel_h, kernel_w, in_channels, n_filters = weightList[0].shape
+        weight = weightList[0]
     if isinstance(keras_layer.dilation_rate, (list, tuple)):
         dilation = [keras_layer.dilation_rate[0], keras_layer.dilation_rate[1]]
     else:
@@ -220,7 +233,9 @@ def _convert_convolution(inexpr, keras_layer, etab):
               'kernel_size': [kernel_h, kernel_w],
               'strides': [stride_h, stride_w],
               'dilation': dilation,
-              'padding': [0, 0]}
+              'padding': [0, 0],
+              'data_layout': etab.data_layout,
+              'kernel_layout': kernel_layout}
     if is_depthconv:
         params['channels'] = in_channels * depth_mult
         params['groups'] = in_channels
@@ -237,8 +252,12 @@ def _convert_convolution(inexpr, keras_layer, etab):
         if pad_t == pad_b and pad_l == pad_r:
             params['padding'] = (pad_t, pad_l)
         else:
-            inexpr = _op.nn.pad(data=inexpr, pad_width=(
-                (0, 0), (0, 0), (pad_t, pad_b), (pad_l, pad_r)))
+            if etab.data_layout == 'NCHW':
+                inexpr = _op.nn.pad(data=inexpr, pad_width=(
+                    (0, 0), (0, 0), (pad_t, pad_b), (pad_l, pad_r)))
+            else:
+                inexpr = _op.nn.pad(data=inexpr, pad_width=(
+                    (0, 0), (pad_t, pad_b), (pad_l, pad_r), (0, 0)))
     else:
         msg = 'Padding with {} is not supported for operator Convolution ' \
               'in frontend Keras.'
@@ -249,7 +268,10 @@ def _convert_convolution(inexpr, keras_layer, etab):
         out = _op.nn.conv2d(data=inexpr, **params)
     if keras_layer.use_bias:
         bias = etab.new_const(weightList[1])
-        out = _op.nn.bias_add(out, bias)
+        if etab.data_layout == 'NCHW':
+            out = _op.nn.bias_add(out, bias)
+        else:
+            out = _op.nn.bias_add(out, bias, axis=-1)
     # defuse activation
     if sys.version_info.major < 3:
         act_type = keras_layer.activation.func_name
@@ -315,10 +337,11 @@ def _convert_separable_convolution(inexpr, keras_layer, etab):
     return out
 
 
-def _convert_flatten(inexpr, keras_layer, _):
+def _convert_flatten(inexpr, keras_layer, etab):
     _check_data_format(keras_layer)
     # NCHW -> NHWC so that dense can be correctly converted
-    inexpr = _op.transpose(inexpr, axes=[0, 2, 3, 1])
+    if etab.data_layout == 'NCHW':
+        inexpr = _op.transpose(inexpr, axes=[0, 2, 3, 1])
     return _op.nn.batch_flatten(inexpr)
 
 
@@ -326,15 +349,17 @@ def _convert_pooling(inexpr, keras_layer, etab):
     _check_data_format(keras_layer)
     pool_type = type(keras_layer).__name__
     # global pool in keras = global pool + flatten in nnvm/relay
+    global_pool_params = {'layout' : etab.data_layout}
     if pool_type == 'GlobalMaxPooling2D':
-        return _convert_flatten(_op.nn.global_max_pool2d(inexpr), keras_layer, etab)
+        return _convert_flatten(_op.nn.global_max_pool2d(inexpr, **global_pool_params), keras_layer, etab)
     if pool_type == 'GlobalAveragePooling2D':
-        return _convert_flatten(_op.nn.global_avg_pool2d(inexpr), keras_layer, etab)
+        return _convert_flatten(_op.nn.global_avg_pool2d(inexpr, **global_pool_params), keras_layer, etab)
     pool_h, pool_w = keras_layer.pool_size
     stride_h, stride_w = keras_layer.strides
     params = {'pool_size': [pool_h, pool_w],
               'strides': [stride_h, stride_w],
-              'padding': [0, 0]}
+              'padding': [0, 0],
+              'layout': etab.data_layout}
     if keras_layer.padding == 'valid':
         pass
     elif keras_layer.padding == 'same':
@@ -403,9 +428,14 @@ def _convert_cropping(inexpr, keras_layer, _):
 
 
 def _convert_batchnorm(inexpr, keras_layer, etab):
+    if etab.data_layout == 'NCHW' or len(keras_layer.input_shape) < 4:
+        axis = 1
+    else:
+        axis = 3
     params = {'scale': False,
               'center': False,
-              'epsilon': keras_layer.epsilon}
+              'epsilon': keras_layer.epsilon,
+              'axis' : axis}
     idx = 0
     if keras_layer.scale:
         params['scale'] = True
@@ -421,6 +451,10 @@ def _convert_batchnorm(inexpr, keras_layer, etab):
     moving_var = keras_layer.get_weights()[idx + 1]
     params['moving_mean'] = etab.new_const(moving_mean)
     params['moving_var'] = etab.new_const(moving_var)
+    if 'gamma' not in params.keys():
+        params['gamma'] = etab.new_const(np.ones_like(moving_mean))
+    if 'beta' not in params.keys():
+        params['beta'] = etab.new_const(np.zeros_like(moving_mean))
     result, moving_mean, moving_var = _op.nn.batch_norm(inexpr, **params)
     return result
 
@@ -455,9 +489,13 @@ def _convert_padding(inexpr, keras_layer, _):
                       pad_width=((0, 0), (0, 0), (top, bottom), (left, right)))
 
 
-def _convert_concat(inexpr, keras_layer, _):
+def _convert_concat(inexpr, keras_layer, etab):
     _check_data_format(keras_layer)
-    return _op.concatenate(_as_list(inexpr), axis=1)
+    if etab.data_layout == 'NHWC':
+        axis = -1
+    else:
+        axis = 1
+    return _op.concatenate(_as_list(inexpr), axis=axis)
 
 
 def _convert_reshape(inexpr, keras_layer, _):
@@ -600,6 +638,7 @@ _convert_map = {
     'Reshape'                  : _convert_reshape,
     'Concatenate'              : _convert_concat,
     'BatchNormalization'       : _convert_batchnorm,
+    'BatchNormalizationV2'     : _convert_batchnorm,
 
     'Add'                      : _convert_merge,
     'Subtract'                 : _convert_merge,
@@ -678,7 +717,7 @@ def keras_op_to_relay(inexpr, keras_layer, outname, etab):
         etab.set_expr(name, out)
 
 
-def from_keras(model, shape=None):
+def from_keras(model, shape=None, layout='NCHW'):
     """Convert keras model to relay Function.
 
     Parameters
@@ -689,6 +728,9 @@ def from_keras(model, shape=None):
     shape: dict of str to int list/tuple
         Input shapes of the model, optional
 
+    layout: str
+        What data layout to use, should be NCHW or NHWC
+
     Returns
     -------
     mod : tvm.relay.Module
@@ -698,24 +740,36 @@ def from_keras(model, shape=None):
         The parameter dict to be used by Relay.
     """
     try:
-        import keras
+        import tensorflow.keras as keras
     except ImportError:
         raise ImportError('Keras must be installed')
-    assert isinstance(model, keras.engine.training.Model)
+    assert isinstance(model, keras.models.Model)
     if keras.backend.backend() != 'tensorflow':
         raise ValueError("Keras frontend currently supports tensorflow backend only.")
     if keras.backend.image_data_format() != 'channels_last':
         raise ValueError("Keras frontend currently supports data_format = channels_last only.")
-    _check_unsupported_layers(model)
+    #_check_unsupported_layers(model)
 
     def _convert_input_layer(keras_layer):
         input_name = keras_layer.name
         input_shape = shape[input_name] if shape is not None and input_name in shape else None
+        # Check if input shape is defined in its output.
+        if input_shape is None:
+            if keras_layer.output.shape is not None:
+                input_shape = keras_layer.output.shape.as_list()
+        # Check outbound layers, if they have data format NHWC, then we need to transpose.
+        out_layer = keras_layer.outbound_nodes[0].outbound_layer
+        if hasattr(out_layer, 'data_format'):
+            if out_layer.data_format == 'channels_last' and layout == 'NCHW':
+                input_shape = [input_shape[0], input_shape[3], input_shape[1], input_shape[2]]
+            elif out_layer.data_format == 'channels_first' and layout == 'NHWC':
+                input_shape = [input_shape[0], input_shape[2], input_shape[3], input_shape[1]]
         etab.set_expr(input_name, new_var(input_name, shape=input_shape))
 
     etab = ExprTable()
+    etab.data_layout = layout
     for keras_layer in model.layers:
-        if isinstance(keras_layer, keras.engine.InputLayer):
+        if isinstance(keras_layer, keras.layers.InputLayer):
             _convert_input_layer(keras_layer)
         else:
             inbound_nodes = keras_layer.inbound_nodes if hasattr(keras_layer, 'inbound_nodes') \
@@ -728,31 +782,49 @@ def from_keras(model, shape=None):
                 # If some nodes in imported model is not relevant to the current model,
                 # skip such layers. model._network_nodes contains keys of all nodes relevant
                 # to the current model.
-                if not model._node_key(keras_layer, node_idx) in model._network_nodes:
-                    continue
+                #if not model._node_key(keras_layer, node_idx) in model._network_nodes:
+                #    continue
                 inexpr = []
                 # Since Keras allows creating multiple layers from the same name instance,
                 # we append node index to the expr name to make it unique.
                 # The one exception is InputLayer. Changing input variable names after conversion
                 # would confuse users, so we should keep them as far as possible. Fortunately,
                 # they are named uniquely to input_1, input_2, input_3... by default.
-                zip_node = zip(node.node_indices, node.tensor_indices, node.inbound_layers)
+                def _as_list(x):
+                    if isinstance(x, list):
+                        return x
+                    else:
+                        return [x]
+                zip_node = zip(_as_list(node.node_indices), _as_list(node.tensor_indices), _as_list(node.inbound_layers))
                 for n_idx, t_idx, inbound_layer in zip_node:
-                    if isinstance(inbound_layer, keras.engine.InputLayer):
+                    if isinstance(inbound_layer, keras.layers.InputLayer):
                         expr_name = inbound_layer.name
                         _convert_input_layer(inbound_layer)
                     else:
-                        expr_name = inbound_layer.name + ':' + str(n_idx) + ':' + str(t_idx)
+                        expr_name = inbound_layer.output.name + ':' + str(t_idx)
                     expr = etab.get_expr(expr_name)
                     inexpr.append(expr)
                 if len(inexpr) == 1:
                     inexpr = inexpr[0]
-                keras_op_to_relay(inexpr, keras_layer, keras_layer.name + ':' + str(node_idx), etab)
+
+                # In tf 2.0 outputs go through layerless identity nodes. Check if thats the case here
+                # and name appropriately.
+                op_name = keras_layer.output.name
+                for c in keras_layer.output.consumers():
+                    for o in c.outputs:
+                        if o in model.outputs:
+                            op_name = o.name
+                # Add the op to our graph.
+                keras_op_to_relay(inexpr, keras_layer, op_name, etab)
     # model._output_coordinates contains out_node(oc[0]), node_index(oc[1]) and tensor_index(oc[2])
     # Get all output nodes in etab using the name made from above values.
     # The out exprs were added to etab in keras_op_to_relay using this name.
-    outexpr = [etab.get_expr(oc[0].name + ":" + str(oc[1]) + ":" + str(oc[2])) \
-               for oc in model._output_coordinates]
+    outexpr = []
+    for output in model.outputs:
+        out_ctr = 0
+        while (output.name + ':' + str(out_ctr)) in outexpr:
+            out_ctr += 1
+        outexpr.append(etab.get_expr(output.name + ':' + str(out_ctr)))
     outexpr = outexpr[0] if len(outexpr) == 1 else _expr.Tuple(outexpr)
     func = _expr.Function(analysis.free_vars(outexpr), outexpr)
     params = {k:_nd.array(np.array(v, dtype=np.float32)) for k, v in etab.params.items()}
