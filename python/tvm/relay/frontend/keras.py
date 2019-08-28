@@ -427,6 +427,186 @@ def _convert_cropping(inexpr, keras_layer, _):
         end=[int32_max, int32_max, in_h-crop_b, in_w-crop_r])
 
 
+def _convert_enter_integer(inexpr, keras_layer, etab):
+    # Extract layer information
+    scale = _expr.const(keras_layer.scale, dtype='float32')
+    inexpr = inexpr * scale
+
+    quantize = keras_layer.quantize
+    if quantize:
+        bit_range = _expr.const(2**(keras_layer.bits - 1), dtype='float32')
+        # Now quantize input
+        inexpr = _op.clip(inexpr, a_min=0., a_max=1.)
+        inexpr = _op.round(bit_range * inexpr)
+        inexpr = _op.cast(inexpr, 'int16')
+    return inexpr
+
+def _convert_exit_integer(inexpr, keras_layer, etab):
+    inexpr = _op.cast(inexpr, 'float32')
+    return inexpr
+
+
+def _convert_bitserial_convolution(inexpr, keras_layer, etab):
+    # TODO: currently hardcoded to rpi data types.
+    _check_data_format(keras_layer)
+    weightList = keras_layer.get_weights()
+    kernel_h, kernel_w, in_channels, n_filters = weightList[0].shape
+    # NHWC Actually needs HWIO, use OIHW for NCHW as below.
+    if etab.data_layout == 'NCHW':
+        weight = weightList[0].transpose([3, 2, 0, 1])
+    else:
+        weight = weightList[0]
+    if isinstance(keras_layer.dilation_rate, (list, tuple)):
+        dilation = [keras_layer.dilation_rate[0], keras_layer.dilation_rate[1]]
+    else:
+        dilation = [keras_layer.dilation_rate, keras_layer.dilation_rate]
+    dilated_kernel_h = (kernel_h - 1) * dilation[0] + 1
+    dilated_kernel_w = (kernel_w - 1) * dilation[1] + 1
+    stride_h, stride_w = keras_layer.strides
+    # Quantize and bitpack weights.
+    weight = (weight > 0).astype('int16')
+    weight = _op.cast(etab.new_const(weight), 'int16')
+    if etab.data_layout == 'NCHW':
+        q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=0, pack_type='uint8')
+    else:
+        q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=2, bit_axis=2, pack_type='uint8')
+    params = {'weight': q_weight,
+              'kernel_size': [kernel_h, kernel_w],
+              'strides': [stride_h, stride_w],
+              'padding': [0, 0],
+              'activation_bits': keras_layer.bits,
+              'weight_bits': 1,
+              'out_dtype': 'int16',
+              'pack_dtype': 'uint8',
+              'data_layout': etab.data_layout}
+    params['channels'] = n_filters
+    if keras_layer.padding == 'valid':
+        pass
+    # we insert a separate pad operator
+    elif keras_layer.padding == 'same':
+        in_h = keras_layer.input_shape[1]
+        in_w = keras_layer.input_shape[2]
+        pad_t, pad_b = _get_pad_pair(in_h, dilated_kernel_h, stride_h)
+        pad_l, pad_r = _get_pad_pair(in_w, dilated_kernel_w, stride_w)
+        if pad_t == pad_b and pad_l == pad_r:
+            params['padding'] = (pad_t, pad_l)
+        else:
+            if etab.data_layout == 'NCHW':
+                inexpr = _op.nn.pad(data=inexpr, pad_width=(
+                    (0, 0), (0, 0), (pad_t, pad_b), (pad_l, pad_r)))
+            else:
+                inexpr = _op.nn.pad(data=inexpr, pad_width=(
+                    (0, 0), (pad_t, pad_b), (pad_l, pad_r), (0, 0)))
+    else:
+        msg = 'Padding with {} is not supported for operator Convolution ' \
+              'in frontend Keras.'
+        raise tvm.error.OpAttributeUnimplemented(msg.format(keras_layer.padding))
+    out = _op.nn.bitserial_conv2d(data=inexpr, **params)
+    if keras_layer.use_bias:
+        bias = etab.new_const(weightList[1])
+        if etab.data_layout == 'NCHW':
+            out = _op.nn.bias_add(out, bias)
+        else:
+            out = _op.nn.bias_add(out, bias, axis=-1)
+    # defuse activation
+    act_type = keras_layer.activation.__name__
+    if act_type != 'linear':
+        out = _convert_activation(out, act_type, etab)
+    return out
+
+
+def _convert_bitserial_dense(inexpr, keras_layer, etab):
+    # Maybe force inputs to be int.
+    #inexpr = _op.cast(inexpr, 'int16')
+    weightList = keras_layer.get_weights()
+    # Quantize and pack weight.
+    weight = weightList[0].transpose([1, 0])
+    weight = (weight > 0).astype('int16')
+    weight = _op.cast(etab.new_const(weight), 'int16')
+    q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=1, pack_type='uint8')
+    params = {
+        'weight': q_weight,
+        'units': weightList[0].shape[1],
+        'data_bits': keras_layer.bits,
+        'weight_bits': 1,
+        'out_dtype': 'int16',
+        'pack_dtype': 'uint8'
+    }
+    input_shape = keras_layer.input_shape
+    input_dim = len(input_shape)
+    out = _op.nn.bitserial_dense(data=inexpr, **params)
+    if keras_layer.use_bias:
+        bias = etab.new_const(weightList[1])
+        out = _op.nn.bias_add(out, bias)
+    # defuse activation
+    act_type = keras_layer.activation.__name__
+    if act_type != 'linear':
+        out = _convert_activation(out, act_type, etab)
+    return out
+
+# ShiftNorm Numpy Helper Functions
+def AP2(x):
+    return 2**(np.round(np.log2(np.abs(x))))
+
+def AP2_bits(x):
+    return np.round(np.log2(np.abs(x)))
+
+def FPQ(inputs, scale, bits):
+    y = np.clip(inputs, -scale, scale)
+    bit_value = scale / (2.0**bits - 1.0)
+    y = y / bit_value
+    y = np.round(y)
+    return y
+
+def get_quantize_bits(x):
+    mean = np.mean(np.reshape(x, [-1, x.shape[-1]]), axis=0)
+    bits = (x >= 0).astype('float32')
+    bits = 2 * bits - 1
+    approximate_mean = AP2(mean)
+    return approximate_mean, bits
+
+def compute_shift_scale(variance, mean, epsilon, previous_weights, bits):
+    std_factor = (1.0 / np.sqrt(variance + epsilon))
+    std_bits = AP2_bits(std_factor)
+    weight_mean, weight_bits = get_quantize_bits(previous_weights)
+    weight_scale_bits = -np.log2(weight_mean)
+    total_bits = weight_scale_bits + bits
+
+    mean_scale = 1.0 + ((1.0 / (2.0**bits - 1.0)) *
+                        (1.0 - (1.0 / 2.0**weight_scale_bits)))
+    quantized_means = FPQ(mean, mean_scale, total_bits)
+
+    # compute total right shift
+    total_right_shift = std_bits + weight_scale_bits
+    # compute total offset
+    total_offset = 2**(weight_scale_bits - 1) - quantized_means
+
+    return total_right_shift, total_offset
+
+def _convert_shiftnorm(inexpr, keras_layer, etab):
+    weightList = keras_layer.get_weights()
+    # Weight 0 is previous layer kernel.
+    mean = weightList[1]
+    variance = weightList[2]
+    epsilon = keras_layer.epsilon
+    previous_weights = keras_layer.previous_layer.get_weights()[0]
+    bits = keras_layer.bits
+    total_right_shift, total_offset = compute_shift_scale(variance, mean, epsilon, previous_weights, bits)
+
+    # Apply shift normalization.
+    offset_const = _op.cast(etab.new_const(total_offset), 'int16')
+    shift_const = _op.cast(etab.new_const(total_right_shift), 'int16')
+    result = _op.right_shift(inexpr + offset_const, shift_const)
+    # Apply clipping to prepare next input.
+    result = _op.clip(result, 0, (2**keras_layer.bits) - 1)
+    return result
+
+
+def _convert_scalu(inexpr, keras_layer, etab):
+    scale = etab.new_const(keras_layer.get_weights()[0])
+    return _op.cast(inexpr, 'float32') * scale
+
+
 def _convert_batchnorm(inexpr, keras_layer, etab):
     if etab.data_layout == 'NCHW' or len(keras_layer.input_shape) < 4:
         axis = 1
@@ -646,6 +826,13 @@ _convert_map = {
     'ZeroPadding2D'            : _convert_padding,
     'UpSampling2D'             : _convert_upsample,
     'Cropping2D'               : _convert_cropping,
+
+    'EnterInteger'             : _convert_enter_integer,
+    'ExitInteger'              : _convert_exit_integer,
+    'BinaryConv2D'             : _convert_bitserial_convolution,
+    'BinaryDense'              : _convert_bitserial_dense,
+    'ShiftNormalization'       : _convert_shiftnorm,
+    'Scalu'                    : _convert_scalu,
 
     # 'ZeroPadding1D'          : _convert_padding,
     # 'AveragePooling1D'       : _convert_pooling,
