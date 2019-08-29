@@ -25,6 +25,7 @@ from .. import expr as _expr
 from .. import module as _module
 from .. import op as _op
 from ... import nd as _nd
+from .. import annotation as _annotation
 from .common import ExprTable, new_var
 
 __all__ = ['from_keras']
@@ -480,6 +481,7 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
               'weight_bits': 1,
               'out_dtype': 'int16',
               'pack_dtype': 'uint8',
+              'unipolar': not keras_layer.bipolar,
               'kernel_layout': kernel_layout,
               'data_layout': etab.data_layout}
     params['channels'] = n_filters
@@ -513,7 +515,7 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
             out = _op.nn.bias_add(out, bias, axis=-1)
     # defuse activation
     act_type = keras_layer.activation.__name__
-    if act_type != 'linear':
+    if act_type != 'linear' and keras_layer.use_act:
         out = _convert_activation(out, act_type, etab)
     return out
 
@@ -639,6 +641,44 @@ def _convert_batchnorm(inexpr, keras_layer, etab):
     if 'beta' not in params.keys():
         params['beta'] = etab.new_const(np.zeros_like(moving_mean))
     result, moving_mean, moving_var = _op.nn.batch_norm(inexpr, **params)
+    return result
+
+
+def _convert_unfused_batchnorm(inexpr, keras_layer, etab):
+    inexpr = _annotation.stop_fusion(inexpr)
+    inexpr = _op.cast(inexpr, 'float32')
+    inexpr = _annotation.stop_fusion(inexpr)
+    if etab.data_layout == 'NCHW' or len(keras_layer.input_shape) < 4:
+        axis = 1
+    else:
+        axis = 3
+    params = {'scale': False,
+              'center': False,
+              'epsilon': keras_layer.epsilon,
+              'axis' : axis}
+    idx = 0
+    if keras_layer.scale:
+        params['scale'] = True
+        gamma = keras_layer.get_weights()[idx]
+        params['gamma'] = etab.new_const(gamma)
+        idx += 1
+    if keras_layer.center:
+        params['center'] = True
+        beta = keras_layer.get_weights()[idx]
+        params['beta'] = etab.new_const(beta)
+        idx += 1
+    moving_mean = keras_layer.get_weights()[idx]
+    moving_var = keras_layer.get_weights()[idx + 1]
+    params['moving_mean'] = etab.new_const(moving_mean)
+    params['moving_var'] = etab.new_const(moving_var)
+    if 'gamma' not in params.keys():
+        params['gamma'] = etab.new_const(np.ones_like(moving_mean))
+    if 'beta' not in params.keys():
+        params['beta'] = etab.new_const(np.zeros_like(moving_mean))
+    result, moving_mean, moving_var = _op.nn.batch_norm(inexpr, **params)
+    result = _annotation.stop_fusion(result)
+    result = _op.cast(result, 'int16')
+    result = _annotation.stop_fusion(result)
     return result
 
 
@@ -836,6 +876,7 @@ _convert_map = {
     'BinaryDense'              : _convert_bitserial_dense,
     'ShiftNormalization'       : _convert_shiftnorm,
     'Scalu'                    : _convert_scalu,
+    'UnfusedBatchNorm'         : _convert_unfused_batchnorm,
 
     # 'ZeroPadding1D'          : _convert_padding,
     # 'AveragePooling1D'       : _convert_pooling,
