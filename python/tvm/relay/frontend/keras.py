@@ -587,7 +587,6 @@ def compute_shift_scale(variance, mean, epsilon, previous_weights, bits):
     return total_right_shift, total_offset
 
 def _convert_shiftnorm(inexpr, keras_layer, etab):
-    return inexpr
     weightList = keras_layer.get_weights()
     # Weight 0 is previous layer kernel.
     mean = weightList[1]
