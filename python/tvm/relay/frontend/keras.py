@@ -677,8 +677,15 @@ def _convert_unfused_batchnorm(inexpr, keras_layer, etab):
         params['beta'] = etab.new_const(np.zeros_like(moving_mean))
     result, moving_mean, moving_var = _op.nn.batch_norm(inexpr, **params)
     result = _annotation.stop_fusion(result)
+
+    # Now requantize output (hardcode bits to 2 since it doesnt really matter)
+    bit_range = _expr.const(2**(2 - 1), dtype='float32')
+    result = _op.clip(result, a_min=0., a_max=1.)
+    result = _op.round(bit_range * result)
+    result = _annotation.stop_fusion(result)
     result = _op.cast(result, 'int16')
     result = _annotation.stop_fusion(result)
+
     return result
 
 
