@@ -1,0 +1,78 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Makefile Example to deploy TVM modules.
+
+CXX=clang++ -static -target mipsel-linux-gnu -march=mips32 --sysroot=${Ingenic_sdk_path}/crossToolchain/mips-gcc472-glibc216-32bit/mips-linux-gnu/libc 
+
+TVM_ROOT=$(shell cd ../..; pwd)
+DMLC_CORE=${TVM_ROOT}/3rdparty/dmlc-core
+
+PKG_CFLAGS = -std=c++11 -O2\
+	-I${TVM_ROOT}/include\
+	-I${DMLC_CORE}/include\
+	-I${TVM_ROOT}/3rdparty/dlpack/include\
+
+PKG_CFLAGS += ${Ingenic_CFLAGS} ${Ingenic_INC} -stdlib=libc++
+
+PKG_LDFLAGS = ${Ingenic_LIBS}
+
+PKG_LDFLAGS += -L${TVM_ROOT}/build -pthread -ldl -lc++
+
+model_dir := model
+
+.PHONY: clean all cc
+
+all: lib/cpp_deploy_normal
+cc: lib/cpp_deploy.cc lib/libtvm_runtime.cc
+
+# Serialize graph.json file
+lib/graph.json.cc: lib/graph.json
+	xxd -i $^ > $@
+
+# Serialize params.bin file
+lib/params.bin.cc: lib/params.bin
+	xxd -i $^ > $@
+
+# Compile relay model and export artifacts.
+lib/model.o lib/graph.json lib/params.bin: build_model.py
+	python $<
+
+# Build rule for all in one TVM package library
+lib/libtvm_runtime_pack.o: tvm_runtime_pack.cc
+	@mkdir -p $(@D)
+	$(CXX) -c $(PKG_CFLAGS) -o $@  $^
+
+# The code library built by TVM
+lib/test_addone_sys.o: prepare_test_libs.py
+	@mkdir -p $(@D)
+	python3 prepare_test_libs.py
+
+lib/cpp_deploy.o: cpp_deploy.cc
+	@mkdir -p $(@D)
+	$(CXX) -c $(PKG_CFLAGS) -o $@  $^
+
+lib/libtvm_runtime.o: tvm_runtime_pack.cc
+	@mkdir -p $(@D)
+	$(CXX) -c $(PKG_CFLAGS) -o $@  $^
+
+# Deploy using pre-built libtvm_runtime.so
+lib/cpp_deploy_normal: cpp_deploy.cc lib/test_addone_sys.o tvm_runtime_pack.cc lib/model.o lib/graph.json.cc lib/params.bin.cc
+	@mkdir -p $(@D)
+	$(CXX) $(PKG_CFLAGS) -o $@  $^ $(PKG_LDFLAGS)
+clean:
+	rm -rf lib
