@@ -21,12 +21,18 @@
  * \brief Example code on load and run TVM module.s
  * \file cpp_deploy.cc
  */
+#include <memory>
 #include <cstdio>
 #include <iostream>
 #include <dlpack/dlpack.h>
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/packed_func.h>
+
+extern unsigned char lib_graph_json[];
+extern unsigned int lib_graph_json_len;
+extern unsigned char lib_params_bin[];
+extern unsigned int lib_params_bin_len;
 
 void Verify(tvm::runtime::Module mod, std::string fname) {
   // Get the function from the module.
@@ -75,11 +81,14 @@ void Verify(tvm::runtime::Module mod, std::string fname) {
 }
 
 int main(void) {
-  // Normally we can directly
-  //tvm::runtime::Module mod_dylib =
-  //    tvm::runtime::Module::LoadFromFile("lib/test_addone_dll.so");
-  //LOG(INFO) << "Verify dynamic loading from test_addone_dll.so";
-  //Verify(mod_dylib, "addone");
+  // Load graph json library.
+  const std::string json_data(&lib_graph_json[0], &lib_graph_json[0] + lib_graph_json_len);
+  std::cout << "Loaded graph JSON.\n";
+  // Load parameter data
+  TVMByteArray params;
+  params.data = reinterpret_cast<const char *>(&lib_params_bin[0]);
+  params.size = lib_params_bin_len;
+  std::cout << "Loaded Params.\n";
   // For libraries that are directly packed as system lib and linked together with the app
   // We can directly use GetSystemLib to get the system wide library.
   std::cout << "Verify load function from system lib\n";

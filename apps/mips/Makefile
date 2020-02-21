@@ -35,10 +35,9 @@ PKG_LDFLAGS += -L${TVM_ROOT}/build -pthread -ldl -lc++
 
 model_dir := model
 
-.PHONY: clean all cc
+.PHONY: clean all
 
-all: lib/cpp_deploy_normal
-cc: lib/cpp_deploy.cc lib/libtvm_runtime.cc
+all: lib/cpp_deploy_packed
 
 # Serialize graph.json file
 lib/graph.json.cc: lib/graph.json
@@ -52,26 +51,13 @@ lib/params.bin.cc: lib/params.bin
 lib/model.o lib/graph.json lib/params.bin: build_model.py
 	python $<
 
-# Build rule for all in one TVM package library
-lib/libtvm_runtime_pack.o: tvm_runtime_pack.cc
-	@mkdir -p $(@D)
-	$(CXX) -c $(PKG_CFLAGS) -o $@  $^
-
 # The code library built by TVM
 lib/test_addone_sys.o: prepare_test_libs.py
 	@mkdir -p $(@D)
 	python3 prepare_test_libs.py
 
-lib/cpp_deploy.o: cpp_deploy.cc
-	@mkdir -p $(@D)
-	$(CXX) -c $(PKG_CFLAGS) -o $@  $^
-
-lib/libtvm_runtime.o: tvm_runtime_pack.cc
-	@mkdir -p $(@D)
-	$(CXX) -c $(PKG_CFLAGS) -o $@  $^
-
 # Deploy using pre-built libtvm_runtime.so
-lib/cpp_deploy_normal: cpp_deploy.cc lib/test_addone_sys.o tvm_runtime_pack.cc lib/model.o lib/graph.json.cc lib/params.bin.cc
+lib/cpp_deploy_packed: cpp_deploy.cc lib/test_addone_sys.o tvm_runtime_pack.cc lib/model.o lib/graph.json.cc lib/params.bin.cc
 	@mkdir -p $(@D)
 	$(CXX) $(PKG_CFLAGS) -o $@  $^ $(PKG_LDFLAGS)
 clean:

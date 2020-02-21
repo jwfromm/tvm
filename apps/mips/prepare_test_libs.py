@@ -30,17 +30,11 @@ def prepare_test_libs(base_path):
     fadd_dylib.export_library(dylib_path)
 
     # Compile library in system library mode
-    fadd_syslib = tvm.build(s, [A, B], "llvm -target=mipsel-linux-gnu -mcpu=mips32 --system-lib", name="addonesys")
+    target="llvm -target=mipsel-linux-gnu -mcpu=mips32 --system-lib"
+    #target="llvm"
+    fadd_syslib = tvm.build(s, [A, B], target, name="addonesys")
     syslib_path = os.path.join(base_path, "test_addone_sys.o")
     fadd_syslib.save(syslib_path)
-
-    #mod = pickle.load(open("model.pkl"), "rb")
-    #params = relay.load_param_dict(open("model.params", "rb").read())
-    #target="llvm -target=mipsel-linux-gnu -mcpu=mips32 --system-lib"
-    #ctx=tvm.cpu()
-
-    #with relay.build_config(opt_level=3):
-    #    graph, lib, params = relay.build(mod, target=target, params=params)
 
 
 if __name__ == "__main__":
