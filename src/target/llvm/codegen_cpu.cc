@@ -434,7 +434,7 @@ void CodeGenCPU::CreateComputeScope(const AttrStmtNode* op) {
       llvm::FunctionType::get(t_int_, arg_types, false);
   llvm::Function* fcompute =
       llvm::Function::Create(ftype,
-                             llvm::Function::PrivateLinkage,
+                             llvm::Function::ExternalLinkage,
                              op->value.as<StringImmNode>()->value,
                              module_.get());
   BasicBlock* compute_call_end = CheckCallSuccess(
