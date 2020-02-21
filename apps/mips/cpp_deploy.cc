@@ -80,7 +80,7 @@ void Verify(tvm::runtime::Module mod, std::string fname) {
   std::cout << "Finish verification...\n";
 }
 
-int main(void) {
+void RunGraph(tvm::runtime::Module mod_syslib) {
   // Load graph json library.
   const std::string json_data(&lib_graph_json[0], &lib_graph_json[0] + lib_graph_json_len);
   std::cout << "Loaded graph JSON.\n";
@@ -89,10 +89,23 @@ int main(void) {
   params.data = reinterpret_cast<const char *>(&lib_params_bin[0]);
   params.size = lib_params_bin_len;
   std::cout << "Loaded Params.\n";
+
+  // Create graph runtime.
+  int device_type = kDLCPU;
+  int device_id = 0;
+  tvm::runtime::Module mod =
+    (*tvm::runtime::Registry::Get("tvm.graph_runtime.create"))(
+      json_data, mod_syslib, device_type, device_id
+    );
+  std::cout << "Graph Runtime Created.\n";
+}
+
+int main(void) {
   // For libraries that are directly packed as system lib and linked together with the app
   // We can directly use GetSystemLib to get the system wide library.
   std::cout << "Verify load function from system lib\n";
   tvm::runtime::Module mod_syslib = (*tvm::runtime::Registry::Get("runtime.SystemLib"))();
   Verify(mod_syslib, "addonesys");
+  RunGraph(mod_syslib);
   return 0;
 }
