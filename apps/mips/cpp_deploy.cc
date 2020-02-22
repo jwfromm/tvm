@@ -24,6 +24,7 @@
 #include <memory>
 #include <cstdio>
 #include <iostream>
+#include <random>
 #include <dlpack/dlpack.h>
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/registry.h>
@@ -80,7 +81,7 @@ void Verify(tvm::runtime::Module mod, std::string fname) {
   std::cout << "Finish verification...\n";
 }
 
-void RunGraph(tvm::runtime::Module mod_syslib) {
+tvm::runtime::Module PrepareRuntime(tvm::runtime::Module mod_syslib) {
   // Load graph json library.
   const std::string json_data(&lib_graph_json[0], &lib_graph_json[0] + lib_graph_json_len);
   std::cout << "Loaded graph JSON.\n";
@@ -97,7 +98,61 @@ void RunGraph(tvm::runtime::Module mod_syslib) {
     (*tvm::runtime::Registry::Get("tvm.graph_runtime.create"))(
       json_data, mod_syslib, device_type, device_id
     );
+
+  // Load parameters into the runtime.
+  mod.GetFunction("load_params")(params);
   std::cout << "Graph Runtime Created.\n";
+  return mod;
+}
+
+void RunGraph(tvm::runtime::Module mod) {
+  std::vector<int64_t> input_shape = {1, 1, 192, 320};
+  std::vector<float> input_storage(1 * 1 * 192 * 320);
+  std::mt19937 gen(0);
+  for (auto &e : input_storage) {
+    e = std::uniform_real_distribution<float>(0.0, 1.0)(gen);
+  }
+
+  DLTensor input;
+  input.data = input_storage.data();
+  input.ctx = DLContext{kDLCPU, 0};
+  input.ndim = 4;
+  input.dtype = DLDataType{kDLFloat, 32, 1};
+  input.shape = input_shape.data();
+  input.strides = nullptr;
+  input.byte_offset = 0;
+  mod.GetFunction("set_input")("data", &input);
+  std::cout << "Input loaded\n";
+
+  // Perform inference.
+  mod.GetFunction("run")();
+  std::cout << "Inference Complete\n";
+
+  // Get the output.
+  std::vector<int64_t> output_shape = {1, 18, 12, 20};
+  std::vector<float> output_storage(1 * 18 * 12 * 20);
+  DLTensor output;
+  output.data = output_storage.data();
+  output.ctx = DLContext{kDLCPU, 0};
+  output.ndim = 4;
+  output.dtype = DLDataType{kDLFloat, 32, 1};
+  output.shape = output_shape.data();
+  output.strides = nullptr;
+  output.byte_offset = 0;
+  mod.GetFunction("get_output")(0, &output);
+  std::cout << "Output Extracted\n";
+  // Now loop and measure a few runs.
+  //time_t start, end;
+  //std::time(&start);
+  //for (int i = 0; i < 5; i++) {
+  //  mod.GetFunction("run")();
+  //  mod.GetFunction("get_output")(0, &output);
+  //}
+  //std::time(&end); 
+  //// Calculating total time taken by the program. 
+  //float time_taken = float(end - start); 
+  //std::cout << "Time taken by program is : " << time_taken;
+  //std::cout << " sec\n"
 }
 
 int main(void) {
@@ -106,6 +161,8 @@ int main(void) {
   std::cout << "Verify load function from system lib\n";
   tvm::runtime::Module mod_syslib = (*tvm::runtime::Registry::Get("runtime.SystemLib"))();
   Verify(mod_syslib, "addonesys");
-  RunGraph(mod_syslib);
+  tvm::runtime::Module mod = PrepareRuntime(mod_syslib);
+  // Perform first run to initialize.
+  RunGraph(mod);
   return 0;
 }
