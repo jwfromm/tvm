@@ -141,18 +141,19 @@ void RunGraph(tvm::runtime::Module mod) {
   output.byte_offset = 0;
   mod.GetFunction("get_output")(0, &output);
   std::cout << "Output Extracted\n";
+
   // Now loop and measure a few runs.
-  //time_t start, end;
-  //std::time(&start);
-  //for (int i = 0; i < 5; i++) {
-  //  mod.GetFunction("run")();
-  //  mod.GetFunction("get_output")(0, &output);
-  //}
-  //std::time(&end); 
-  //// Calculating total time taken by the program. 
-  //float time_taken = float(end - start); 
-  //std::cout << "Time taken by program is : " << time_taken;
-  //std::cout << " sec\n"
+  time_t start, end;
+  std::time(&start);
+  for (int i = 0; i < 5; i++) {
+    mod.GetFunction("run")();
+    mod.GetFunction("get_output")(0, &output);
+  }
+  std::time(&end); 
+  // Calculating total time taken by the program. 
+  float time_taken = float(end - start); 
+  std::cout << "Time taken by program is : " << time_taken;
+  std::cout << " sec\n";
 }
 
 int main(void) {
