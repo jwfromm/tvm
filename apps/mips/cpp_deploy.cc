@@ -106,8 +106,13 @@ tvm::runtime::Module PrepareRuntime(tvm::runtime::Module mod_syslib) {
 }
 
 void RunGraph(tvm::runtime::Module mod) {
-  std::vector<int64_t> input_shape = {1, 1, 192, 320};
-  std::vector<float> input_storage(1 * 1 * 192 * 320);
+  // Input HxW = 192 X 320
+  //std::vector<int64_t> input_shape = {1, 1, 192, 320};
+  //std::vector<float> input_storage(1 * 1 * 192 * 320);
+  // Input HxW = 96 X 160
+  std::vector<int64_t> input_shape = {1, 1, 96, 160};
+  std::vector<float> input_storage(1 * 1 * 96 * 160);
+
   std::mt19937 gen(0);
   for (auto &e : input_storage) {
     e = std::uniform_real_distribution<float>(0.0, 1.0)(gen);
@@ -129,8 +134,13 @@ void RunGraph(tvm::runtime::Module mod) {
   std::cout << "Inference Complete\n";
 
   // Get the output.
-  std::vector<int64_t> output_shape = {1, 18, 12, 20};
-  std::vector<float> output_storage(1 * 18 * 12 * 20);
+  // Output shapes for input HxW = 192 X 320
+  //std::vector<int64_t> output_shape = {1, 18, 12, 20};
+  //std::vector<float> output_storage(1 * 18 * 12 * 20);
+  // Output shapes for input HxW = 96 X 160
+  std::vector<int64_t> output_shape = {1, 18, 6, 10};
+  std::vector<float> output_storage(1 * 18 * 6 * 10);
+
   DLTensor output;
   output.data = output_storage.data();
   output.ctx = DLContext{kDLCPU, 0};

@@ -6,7 +6,7 @@ from tvm import relay
 def main():
     model_dir = os.path.abspath("model")
 
-    mod = pickle.load(open(os.path.join(model_dir, "model.pkl"), "rb"))
+    mod = relay.fromtext(open(os.path.join(model_dir, "model.txt"), "r").read())
     params = relay.load_param_dict(open(os.path.join(model_dir, "model.params"), "rb").read())
 
     target="llvm -target=mipsel-linux-gnu -mcpu=mips32 --system-lib"
