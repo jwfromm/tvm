@@ -25,6 +25,7 @@
 #include <cstdio>
 #include <iostream>
 #include <random>
+#include <chrono>
 #include <dlpack/dlpack.h>
 #include <tvm/runtime/module.h>
 #include <tvm/runtime/registry.h>
@@ -106,12 +107,15 @@ tvm::runtime::Module PrepareRuntime(tvm::runtime::Module mod_syslib) {
 }
 
 void RunGraph(tvm::runtime::Module mod) {
-  // Input HxW = 192 X 320
-  //std::vector<int64_t> input_shape = {1, 1, 192, 320};
-  //std::vector<float> input_storage(1 * 1 * 192 * 320);
-  // Input HxW = 96 X 160
-  std::vector<int64_t> input_shape = {1, 1, 96, 160};
-  std::vector<float> input_storage(1 * 1 * 96 * 160);
+  // Input HxW = 352 X 608 (3 channels)
+  //std::vector<int64_t> input_shape = {1, 3, 352, 608};
+  //std::vector<float> input_storage(1 * 3 * 352 * 608);
+  // Input HxW = 192 X 320 (1 channels)
+  std::vector<int64_t> input_shape = {1, 1, 192, 320};
+  std::vector<float> input_storage(1 * 1 * 192 * 320);
+  // Input HxW = 96 X 160 (1 channel)
+  //std::vector<int64_t> input_shape = {1, 1, 96, 160};
+  //std::vector<float> input_storage(1 * 1 * 96 * 160);
 
   std::mt19937 gen(0);
   for (auto &e : input_storage) {
@@ -126,20 +130,16 @@ void RunGraph(tvm::runtime::Module mod) {
   input.shape = input_shape.data();
   input.strides = nullptr;
   input.byte_offset = 0;
-  mod.GetFunction("set_input")("data", &input);
-  std::cout << "Input loaded\n";
-
-  // Perform inference.
-  mod.GetFunction("run")();
-  std::cout << "Inference Complete\n";
-
-  // Get the output.
-  // Output shapes for input HxW = 192 X 320
-  //std::vector<int64_t> output_shape = {1, 18, 12, 20};
-  //std::vector<float> output_storage(1 * 18 * 12 * 20);
-  // Output shapes for input HxW = 96 X 160
-  std::vector<int64_t> output_shape = {1, 18, 6, 10};
-  std::vector<float> output_storage(1 * 18 * 6 * 10);
+  
+  // Output shapes for input HxW = 352 X 608 (3 channel)
+  //std::vector<int64_t> output_shape = {1, 24, 44, 76};
+  //std::vector<float> output_storage(1 * 24 * 44 * 76);
+  // Output shapes for input HxW = 192 X 320 (1 channel)
+  std::vector<int64_t> output_shape = {1, 18, 12, 20};
+  std::vector<float> output_storage(1 * 18 * 12 * 20);
+  // Output shapes for input HxW = 96 X 160 (1 channel)
+  //std::vector<int64_t> output_shape = {1, 18, 6, 10};
+  //std::vector<float> output_storage(1 * 18 * 6 * 10);
 
   DLTensor output;
   output.data = output_storage.data();
@@ -149,21 +149,38 @@ void RunGraph(tvm::runtime::Module mod) {
   output.shape = output_shape.data();
   output.strides = nullptr;
   output.byte_offset = 0;
+
+  // Time model run.
+  auto start = std::chrono::high_resolution_clock::now();
+  // Assign Input
+  mod.GetFunction("set_input")("data", &input);
+  std::cout << "Input loaded\n";
+
+  // Perform inference.
+  mod.GetFunction("run")();
+  std::cout << "Inference Complete\n";
+  // Get the output.
   mod.GetFunction("get_output")(0, &output);
   std::cout << "Output Extracted\n";
 
-  // Now loop and measure a few runs.
-  time_t start, end;
-  std::time(&start);
-  for (int i = 0; i < 5; i++) {
-    mod.GetFunction("run")();
-    mod.GetFunction("get_output")(0, &output);
-  }
-  std::time(&end); 
   // Calculating total time taken by the program. 
-  float time_taken = float(end - start); 
-  std::cout << "Time taken by program is : " << time_taken;
-  std::cout << " sec\n";
+  auto elapsed = std::chrono::high_resolution_clock::now() - start;
+  long long microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
+  std::cout << "Time taken by program is : " << microseconds;
+  std::cout << " us\n";
+
+  // Now loop and measure a few runs.
+  //time_t start, end;
+  //std::time(&start);
+  //for (int i = 0; i < 5; i++) {
+  //  mod.GetFunction("run")();
+  //  mod.GetFunction("get_output")(0, &output);
+  //}
+  //std::time(&end); 
+  //// Calculating total time taken by the program. 
+  //float time_taken = float(end - start); 
+  //std::cout << "Time taken by program is : " << time_taken;
+  //std::cout << " sec\n";
 }
 
 int main(void) {

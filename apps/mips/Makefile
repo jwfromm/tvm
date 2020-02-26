@@ -18,6 +18,7 @@
 # Makefile Example to deploy TVM modules.
 
 CXX=clang++ -static -target mipsel-linux-gnu -march=mips32 --sysroot=${Ingenic_sdk_path}/crossToolchain/mips-gcc472-glibc216-32bit/mips-linux-gnu/libc 
+#CXX = g++
 
 TVM_ROOT=$(shell cd ../..; pwd)
 DMLC_CORE=${TVM_ROOT}/3rdparty/dmlc-core
@@ -26,12 +27,13 @@ PKG_CFLAGS = -std=c++11 -O2\
 	-I${TVM_ROOT}/include\
 	-I${DMLC_CORE}/include\
 	-I${TVM_ROOT}/3rdparty/dlpack/include\
+	-DTVM_NOTHREADS\
 
 PKG_CFLAGS += ${Ingenic_CFLAGS} ${Ingenic_INC} -stdlib=libc++
 
 PKG_LDFLAGS = ${Ingenic_LIBS}
 
-PKG_LDFLAGS += -L${TVM_ROOT}/build -pthread -ldl -lc++
+PKG_LDFLAGS += -L${TVM_ROOT}/build -pthread -ldl -lc++ -lrt
 
 model_dir := model
 

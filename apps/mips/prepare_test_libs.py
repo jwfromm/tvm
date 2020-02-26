@@ -31,7 +31,7 @@ def prepare_test_libs(base_path):
 
     # Compile library in system library mode
     target="llvm -target=mipsel-linux-gnu -mcpu=mips32 --system-lib"
-    #target="llvm"
+    #target="llvm --system-lib"
     fadd_syslib = tvm.build(s, [A, B], target, name="addonesys")
     syslib_path = os.path.join(base_path, "test_addone_sys.o")
     fadd_syslib.save(syslib_path)

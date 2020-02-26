@@ -10,7 +10,7 @@ def main():
     params = relay.load_param_dict(open(os.path.join(model_dir, "model.params"), "rb").read())
 
     target="llvm -target=mipsel-linux-gnu -mcpu=mips32 --system-lib"
-    #target="llvm"
+    #target="llvm --system-lib"
     with relay.build_config(opt_level=3):
         graph, lib, params=relay.build(mod, target=target, params=params)    
 
