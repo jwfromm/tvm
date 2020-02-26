@@ -381,7 +381,7 @@ def _bitserial_conv2d_legalize(attrs, inputs, arg_types):
     # Fix different kernel layouts where possible.
     if attrs['data_layout'] == 'NHWC':
         data, kernel = inputs
-        if len(kernel.data.shape) == 4:
+        if len(kernel._checked_type_.shape) == 4:
             # HWIO layout is expected for NHWC input.
             if attrs['kernel_layout'] == 'HWOI':
                 # Handle HWOI layout. This is common in TF depthwise conv2d graph.
