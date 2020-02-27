@@ -25,7 +25,7 @@ from .. import analysis
 from .. import expr as _expr
 from .. import op as _op
 from ... import nd as _nd
-from .common import ExprTable, new_var
+from .common import ExprTable, new_var, infer_shape
 
 __all__ = ['from_keras']
 
@@ -722,15 +722,16 @@ def _convert_exit_integer(inexpr, keras_layer, etab):
 
 
 def _convert_bitserial_convolution(inexpr, keras_layer, etab):
-    # TODO: currently hardcoded to rpi data types.
     _check_data_format(keras_layer)
     weightList = keras_layer.get_weights()
     kernel_h, kernel_w, in_channels, n_filters = weightList[0].shape
     # NHWC Actually needs HWIO, use OIHW for NCHW as below.
     if etab.data_layout == 'NCHW':
         weight = weightList[0].transpose([3, 2, 0, 1])
+        kernel_layout = 'OIHW'
     else:
         weight = weightList[0]
+        kernel_layout = 'HWIO'
     if isinstance(keras_layer.dilation_rate, (list, tuple)):
         dilation = [keras_layer.dilation_rate[0], keras_layer.dilation_rate[1]]
     else:
@@ -738,16 +739,12 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
     dilated_kernel_h = (kernel_h - 1) * dilation[0] + 1
     dilated_kernel_w = (kernel_w - 1) * dilation[1] + 1
     stride_h, stride_w = keras_layer.strides
-    # Quantize and bitpack weights.
+
+    # Quantize weights.
     weight = (weight > 0).astype('int16')
     weight = _op.cast(etab.new_const(weight), 'int16')
-    if etab.data_layout == 'NCHW':
-        q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=0, pack_type='uint8')
-        kernel_layout = 'OIHW'
-    else:
-        q_weight = _op.nn.bitpack(weight, bits=1, pack_axis=2, bit_axis=2, pack_type='uint8')
-        kernel_layout = 'HWIO'
-    params = {'weight': q_weight,
+
+    params = {'weight': weight,
               'kernel_size': [kernel_h, kernel_w],
               'strides': [stride_h, stride_w],
               'padding': [0, 0],
@@ -795,8 +792,6 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
 
 
 def _convert_bitserial_dense(inexpr, keras_layer, etab):
-    # Maybe force inputs to be int.
-    #inexpr = _op.cast(inexpr, 'int16')
     weightList = keras_layer.get_weights()
     # Quantize and pack weight.
     weight = weightList[0].transpose([1, 0])
@@ -881,6 +876,11 @@ def _convert_shiftnorm(inexpr, keras_layer, etab):
     # Apply shift normalization.
     offset_const = _op.cast(etab.new_const(total_offset), 'int16')
     shift_const = _op.cast(etab.new_const(total_right_shift), 'int16')
+    if etab.data_layout == "NCHW" and not keras_layer.binary_dense:
+        offset_const = _op.expand_dims(offset_const, axis=0)
+        offset_const = _op.expand_dims(offset_const, axis=-1, num_newaxis=2)
+        shift_const = _op.expand_dims(shift_const, axis=0)
+        shift_const = _op.expand_dims(shift_const, axis=-1, num_newaxis=2)
     result = _op.right_shift(inexpr + offset_const, shift_const)
     # Apply clipping to prepare next input.
     result = _op.clip(result, 0, (2**keras_layer.bits) - 1)

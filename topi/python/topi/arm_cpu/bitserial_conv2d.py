@@ -266,7 +266,7 @@ def _intrin_popcount(m, k_i, w_b, x_b, unipolar):
         # body, reset, update
         return _instr(0), _instr(1), _instr(2)
     with tvm.build_config(offset_factor=1, partition_const_loop=True):
-        return tvm.decl_tensor_intrin(z.op, _intrin_func, binds={w: Wb, x:Xb, z:Zb})
+        return tvm.decl_tensor_intrin(z.op, _intrin_func, binds={w: Wb, x: Xb, z: Zb})
 
 # ARM specific schedule that using custom microkernel
 def _schedule_spatial_conv2d_nhwc(cfg, s, data_pad, data_vec, kernel_vec,
@@ -377,11 +377,10 @@ def _bitserial_conv2d_legalize(attrs, inputs, arg_types):
     result : tvm.relay.Expr
         The legalized expr
     """
-
-    # Fix different kernel layouts where possible.
-    if attrs['data_layout'] == 'NHWC':
-        data, kernel = inputs
-        if len(kernel._checked_type_.shape) == 4:
+    data, kernel = inputs
+    if len(kernel._checked_type_.shape) == 4:
+        # Fix different kernel layouts where possible.
+        if attrs['data_layout'] == 'NHWC':
             # HWIO layout is expected for NHWC input.
             if attrs['kernel_layout'] == 'HWOI':
                 # Handle HWOI layout. This is common in TF depthwise conv2d graph.
@@ -392,6 +391,28 @@ def _bitserial_conv2d_legalize(attrs, inputs, arg_types):
             new_attrs = {k: attrs[k] for k in attrs.keys()}
             new_attrs['kernel_layout'] = 'HWIO'
 
+            # Prepack the kernel for better efficiency.
+            kernel = relay.nn.bitpack(
+                kernel, bits=attrs["weight_bits"], pack_axis=2, bit_axis=2, pack_type='uint8')
+
             conv = relay.nn.bitserial_conv2d(data, kernel, **new_attrs)
             return conv
+
+        if attrs['data_layout' == 'NCHW']:
+            # Convert various kernel layouts to OIHW.
+            if attrs['kernel_layout'] == 'HWOI':
+                kernel = relay.transpose(kernel, axes=(2, 3, 0, 1))
+            elif attrs['kernel_layout'] == 'HWIO':
+                kernel = relay.transpose(kernel, axes=(3, 2, 0, 1))
+            # Set new attrs for transposed convolution.
+            new_attrs = {k: attrs[k] for k in attrs.keys()}
+            new_attrs['kernel_layout'] = 'OIHW'
+
+            # prepack the kernel for better efficiency.
+            kernel = relay.nn.bitpack(
+                kernel, bits=attrs["weight_bits"], pack_axis=1, bit_axis=0, pack_type='uint8')
+            
+            conv = relay.nn.bitserial_conv2d(data, kernel, **new_attrs)
+            return conv
+
     return None

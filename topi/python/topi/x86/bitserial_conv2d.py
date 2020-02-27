@@ -18,11 +18,13 @@
 """Bitserial conv2d schedule on x86"""
 import tvm
 from tvm import autotvm
+from tvm import relay
 from .. import tag
 from ..util import get_const_int, get_const_tuple
 from ..nn.pad import pad
 from ..nn.util import get_pad_tuple
 from ..nn.bitserial_util import bitpack, binary_op_multiplier
+from ..nn.bitserial_conv2d import bitserial_conv2d_legalize
 
 @autotvm.register_topi_compute("bitserial_conv2d_nchw.x86")
 def bitserial_conv2d_nchw(cfg, data, kernel, stride, padding, in_bits, weight_bits,
@@ -34,13 +36,14 @@ def bitserial_conv2d_nchw(cfg, data, kernel, stride, padding, in_bits, weight_bi
     if len(kernel.shape) == 4:
         kernel_q = bitpack(kernel, weight_bits, pack_axis=1, bit_axis=0, pack_type=pack_dtype)
         KB, CO, _, KH, KW = get_const_tuple(kernel_q.shape)
+    elif len(kernel.shape) == 5:
+        KB, CO, _, KH, KW = get_const_tuple(kernel.shape)
     else:
         kernel_vec = kernel
         OCO, _, KH, KW, KB, VC = get_const_tuple(kernel_vec.shape)
         CO = OCO * VC
 
     IB, N, CI, H, W = get_const_tuple(data_q.shape)
-    KB, CO, _, KH, KW = get_const_tuple(kernel_q.shape)
 
     if isinstance(padding, int) or (isinstance(padding, (tuple, list)) and len(padding) == 2):
         TPAD, LPAD, DPAD, RPAD = get_pad_tuple(padding, kernel)
@@ -100,6 +103,9 @@ def bitserial_conv2d_nchw(cfg, data, kernel, stride, padding, in_bits, weight_bi
     if len(kernel.shape) == 4:
         kernel_vec = tvm.compute(kvshape, lambda co, ci, dh, dw, b, vc: \
             kernel_q[b][co*VC+vc][ci][dh][dw], name='kernel_vec')
+    elif len(kernel.shape) == 5:
+        kernel_vec = tvm.compute(kvshape, lambda co, ci, dh, dw, b, vc: \
+            kernel[b][co*VC+vc][ci][dh][dw], name='kernel_vec')
 
     ci = tvm.reduce_axis((0, CI), name='ci')
     dh = tvm.reduce_axis((0, KH), name='dh')
@@ -453,3 +459,61 @@ def _schedule_bitserial_conv2d_nhwc(cfg, s, data_q, data_pad, data_vec,
     s[last].parallel(oho)
 
     return s
+
+
+@bitserial_conv2d_legalize.register("cpu")
+def _bitserial_conv2d_legalize(attrs, inputs, arg_types):
+    """Legalizes Bitserial Conv2D op for x86.
+
+    Parameters
+    ----------
+    attrs : tvm.ir.Attrs
+        Attributes of current convolution
+    inputs : list of tvm.relay.Expr
+        The args of the Relay expr to be legalized
+    types : list of types
+        List of input and output types
+
+    Returns
+    -------
+    result : tvm.relay.Expr
+        The legalized expr
+    """
+    data, kernel = inputs
+    if len(kernel._checked_type_.shape) == 4:
+        # Fix different kernel layouts where possible.
+        if attrs['data_layout'] == 'NHWC':
+            # HWIO layout is expected for NHWC input.
+            if attrs['kernel_layout'] == 'HWOI':
+                # Handle HWOI layout. This is common in TF depthwise conv2d graph.
+                kernel = relay.transpose(kernel, axes=(0, 1, 3, 2))
+            elif attrs['kernel_layout'] == 'OIHW':
+                kernel = relay.transpose(kernel, axes=(2, 3, 1, 0))
+            ## Set new attrs for the tranposed conv.
+            new_attrs = {k: attrs[k] for k in attrs.keys()}
+            new_attrs['kernel_layout'] = 'HWIO'
+
+            # Prepack the kernel for better efficiency.
+            kernel = relay.nn.bitpack(
+                kernel, bits=attrs["weight_bits"], pack_axis=2, bit_axis=4, pack_type='uint8')
+
+            conv = relay.nn.bitserial_conv2d(data, kernel, **new_attrs)
+            return conv
+
+        if attrs['data_layout'] == 'NCHW':
+            # Convert various kernel layouts to OIHW.
+            if attrs['kernel_layout'] == 'HWOI':
+                kernel = relay.transpose(kernel, axes=(2, 3, 0, 1))
+            elif attrs['kernel_layout'] == 'HWIO':
+                kernel = relay.transpose(kernel, axes=(3, 2, 0, 1))
+            # Set new attrs for transposed convolution.
+            new_attrs = {k: attrs[k] for k in attrs.keys()}
+            new_attrs['kernel_layout'] = 'OIHW'
+
+            # prepack the kernel for better efficiency.
+            kernel = relay.nn.bitpack(
+                kernel, bits=attrs["weight_bits"], pack_axis=1, bit_axis=0, pack_type='uint8')
+            conv = relay.nn.bitserial_conv2d(data, kernel, **new_attrs)
+            return conv
+
+    return None
