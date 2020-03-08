@@ -35,6 +35,8 @@ extern unsigned char lib_graph_json[];
 extern unsigned int lib_graph_json_len;
 extern unsigned char lib_params_bin[];
 extern unsigned int lib_params_bin_len;
+extern unsigned char lib_image_bin[];
+extern unsigned int lib_image_bin_len;
 
 void Verify(tvm::runtime::Module mod, std::string fname) {
   // Get the function from the module.
@@ -112,15 +114,25 @@ void RunGraph(tvm::runtime::Module mod) {
   //std::vector<float> input_storage(1 * 3 * 352 * 608);
   // Input HxW = 192 X 320 (1 channels)
   std::vector<int64_t> input_shape = {1, 1, 192, 320};
+  // Initialize with image data.
+  //std::vector<float> input_storage(&lib_params_bin[0], &lib_params_bin[0] + (lib_params_bin_len / 4));
+  // Initialize empty array.
   std::vector<float> input_storage(1 * 1 * 192 * 320);
   // Input HxW = 96 X 160 (1 channel)
   //std::vector<int64_t> input_shape = {1, 1, 96, 160};
   //std::vector<float> input_storage(1 * 1 * 96 * 160);
 
-  std::mt19937 gen(0);
-  for (auto &e : input_storage) {
-    e = std::uniform_real_distribution<float>(0.0, 1.0)(gen);
-  }
+  // Initialize and load input image.
+  FILE * in_fp = fopen("lib/img.bin", "rb");
+  size_t in_sz = fread(input_storage.data(), 1*1*192*320, 4, in_fp);
+  fclose(in_fp);
+
+  // Assign random numbers to each input value
+  //std::mt19937 gen(0);
+  //for (auto &e : input_storage) {
+  //  e = std::uniform_real_distribution<float>(0.0, 1.0)(gen);
+  //}
+
 
   DLTensor input;
   input.data = input_storage.data();
@@ -162,6 +174,11 @@ void RunGraph(tvm::runtime::Module mod) {
   // Get the output.
   mod.GetFunction("get_output")(0, &output);
   std::cout << "Output Extracted\n";
+
+  // Write output to file
+  FILE * out_fp = fopen("lib/output.bin", "wb");
+  size_t out_sz = fwrite(output_storage.data(), 1 * 18 * 12 * 20, 4, out_fp);
+  fclose(out_fp);
 
   // Calculating total time taken by the program. 
   auto elapsed = std::chrono::high_resolution_clock::now() - start;
