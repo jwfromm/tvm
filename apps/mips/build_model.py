@@ -32,8 +32,8 @@ def main():
     image = Image.open(image_path)
     # Convert to grayscale
     image = image.convert("L")
-    # Resize to WxH = 320x190
-    image = image.resize((320, 190))
+    # Resize to WxH = 320x192
+    image = image.resize((320, 192))
 
     def transform_image(image):
         image = np.expand_dims(np.array(image), axis=-1)
