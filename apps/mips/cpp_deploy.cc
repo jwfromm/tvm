@@ -110,21 +110,22 @@ tvm::runtime::Module PrepareRuntime(tvm::runtime::Module mod_syslib) {
 
 void RunGraph(tvm::runtime::Module mod) {
   // Input HxW = 352 X 608 (3 channels)
-  //std::vector<int64_t> input_shape = {1, 3, 352, 608};
-  //std::vector<float> input_storage(1 * 3 * 352 * 608);
+  std::vector<int64_t> input_shape = {1, 3, 352, 608};
+  std::vector<float> input_storage(1 * 3 * 352 * 608);
   // Input HxW = 192 X 320 (1 channels)
-  std::vector<int64_t> input_shape = {1, 1, 192, 320};
+  //std::vector<int64_t> input_shape = {1, 1, 192, 320};
+  //std::vector<float> input_storage(1 * 1 * 192 * 320);
   // Initialize with image data.
   //std::vector<float> input_storage(&lib_params_bin[0], &lib_params_bin[0] + (lib_params_bin_len / 4));
   // Initialize empty array.
-  std::vector<float> input_storage(1 * 1 * 192 * 320);
   // Input HxW = 96 X 160 (1 channel)
   //std::vector<int64_t> input_shape = {1, 1, 96, 160};
   //std::vector<float> input_storage(1 * 1 * 96 * 160);
 
   // Initialize and load input image.
   FILE * in_fp = fopen("lib/img.bin", "rb");
-  size_t in_sz = fread(input_storage.data(), 1*1*192*320, 4, in_fp);
+  //size_t in_sz = fread(input_storage.data(), 1*1*192*320, 4, in_fp);
+  size_t in_sz = fread(input_storage.data(), 1*3*352*608, 4, in_fp);
   fclose(in_fp);
 
   // Assign random numbers to each input value
@@ -144,11 +145,11 @@ void RunGraph(tvm::runtime::Module mod) {
   input.byte_offset = 0;
   
   // Output shapes for input HxW = 352 X 608 (3 channel)
-  //std::vector<int64_t> output_shape = {1, 24, 44, 76};
-  //std::vector<float> output_storage(1 * 24 * 44 * 76);
+  std::vector<int64_t> output_shape = {1, 24, 44, 76};
+  std::vector<float> output_storage(1 * 24 * 44 * 76);
   // Output shapes for input HxW = 192 X 320 (1 channel)
-  std::vector<int64_t> output_shape = {12};
-  std::vector<float> output_storage(1 * 12);
+  //std::vector<int64_t> output_shape = {12};
+  //std::vector<float> output_storage(1 * 12);
   // Output shapes for input HxW = 96 X 160 (1 channel)
   //std::vector<int64_t> output_shape = {1, 18, 6, 10};
   //std::vector<float> output_storage(1 * 18 * 6 * 10);
@@ -156,7 +157,7 @@ void RunGraph(tvm::runtime::Module mod) {
   DLTensor output;
   output.data = output_storage.data();
   output.ctx = DLContext{kDLCPU, 0};
-  output.ndim = 1;
+  output.ndim = 4;
   output.dtype = DLDataType{kDLFloat, 32, 1};
   output.shape = output_shape.data();
   output.strides = nullptr;
@@ -172,12 +173,12 @@ void RunGraph(tvm::runtime::Module mod) {
   mod.GetFunction("run")();
   std::cout << "Inference Complete\n";
   // Get the output.
-  mod.GetFunction("get_output")(2, &output);
+  mod.GetFunction("get_output")(0, &output);
   std::cout << "Output Extracted\n";
 
   // Write output to file
   FILE * out_fp = fopen("lib/output.bin", "wb");
-  size_t out_sz = fwrite(output_storage.data(), 1 * 12, 4, out_fp);
+  size_t out_sz = fwrite(output_storage.data(), 1 * 24 * 44 * 76, 4, out_fp);
   fclose(out_fp);
 
   // Calculating total time taken by the program. 

@@ -31,12 +31,14 @@ def main():
     image_path = os.path.join(data_dir, "person.jpg")
     image = Image.open(image_path)
     # Convert to grayscale
-    image = image.convert("L")
+    #image = image.convert("L")
     # Resize to WxH = 320x192
-    image = image.resize((320, 192))
+    #image = image.resize((320, 192))
+    image = image.resize((608, 352))
 
     def transform_image(image):
-        image = np.expand_dims(np.array(image), axis=-1)
+        #image = np.expand_dims(np.array(image), axis=-1)
+        image = np.array(image)
         image = image / 255
         image = image.transpose(2, 0, 1)
         image = np.expand_dims(np.array(image), axis=0)

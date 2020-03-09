@@ -402,8 +402,11 @@ int TVMBackendParallelLaunch(
     int num_task) {
 #if TVM_NOTHREADS
     TVMParallelGroupEnv env;
-    env.num_task = 1;
-    (*flambda)(1, &env, cdata);
+    if (num_task == 0) num_task = 1;
+    env.num_task = num_task;
+    for (int i; i < num_task; i++) {
+      (*flambda)(i, &env, cdata);
+    }
     return 0;
 #endif
 #if !TVM_THREADPOOL_USE_OPENMP
