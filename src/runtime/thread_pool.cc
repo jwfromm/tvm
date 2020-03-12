@@ -404,7 +404,7 @@ int TVMBackendParallelLaunch(
     TVMParallelGroupEnv env;
     if (num_task == 0) num_task = 1;
     env.num_task = num_task;
-    for (int i; i < num_task; i++) {
+    for (int i = 0; i < num_task; i++) {
       (*flambda)(i, &env, cdata);
     }
     return 0;

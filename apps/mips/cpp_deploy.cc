@@ -38,51 +38,6 @@ extern unsigned int lib_params_bin_len;
 extern unsigned char lib_image_bin[];
 extern unsigned int lib_image_bin_len;
 
-void Verify(tvm::runtime::Module mod, std::string fname) {
-  // Get the function from the module.
-  tvm::runtime::PackedFunc f = mod.GetFunction(fname);
-  CHECK(f != nullptr);
-  // Allocate the DLPack data structures.
-  //
-  // Note that we use TVM runtime API to allocate the DLTensor in this example.
-  // TVM accept DLPack compatible DLTensors, so function can be invoked
-  // as long as we pass correct pointer to DLTensor array.
-  //
-  // For more information please refer to dlpack.
-  // One thing to notice is that DLPack contains alignment requirement for
-  // the data pointer and TVM takes advantage of that.
-  // If you plan to use your customized data container, please
-  // make sure the DLTensor you pass in meet the alignment requirement.
-  //
-  DLTensor* x;
-  DLTensor* y;
-  int ndim = 1;
-  int dtype_code = kDLFloat;
-  int dtype_bits = 32;
-  int dtype_lanes = 1;
-  int device_type = kDLCPU;
-  int device_id = 0;
-  int64_t shape[1] = {10};
-  std::cout << "Preallocate\n";
-  TVMArrayAlloc(shape, ndim, dtype_code, dtype_bits, dtype_lanes,
-                device_type, device_id, &x);
-  TVMArrayAlloc(shape, ndim, dtype_code, dtype_bits, dtype_lanes,
-                device_type, device_id, &y);
-  std::cout << "Postallocate\n";
-  for (int i = 0; i < shape[0]; ++i) {
-    static_cast<float*>(x->data)[i] = i;
-  }
-  // Invoke the function
-  // PackedFunc is a function that can be invoked via positional argument.
-  // The signature of the function is specified in tvm.build
-  f(x, y);
-  std::cout << "Post Invoke\n";
-  // Print out the output
-  for (int i = 0; i < shape[0]; ++i) {
-    CHECK_EQ(static_cast<float*>(y->data)[i], i + 1.0f);
-  }
-  std::cout << "Finish verification...\n";
-}
 
 tvm::runtime::Module PrepareRuntime(tvm::runtime::Module mod_syslib) {
   // Load graph json library.
@@ -110,22 +65,20 @@ tvm::runtime::Module PrepareRuntime(tvm::runtime::Module mod_syslib) {
 
 void RunGraph(tvm::runtime::Module mod) {
   // Input HxW = 352 X 608 (3 channels)
-  std::vector<int64_t> input_shape = {1, 3, 352, 608};
-  std::vector<float> input_storage(1 * 3 * 352 * 608);
+  //std::vector<int64_t> input_shape = {1, 3, 352, 608};
+  //std::vector<float> input_storage(1 * 3 * 352 * 608);
   // Input HxW = 192 X 320 (1 channels)
   //std::vector<int64_t> input_shape = {1, 1, 192, 320};
   //std::vector<float> input_storage(1 * 1 * 192 * 320);
-  // Initialize with image data.
-  //std::vector<float> input_storage(&lib_params_bin[0], &lib_params_bin[0] + (lib_params_bin_len / 4));
-  // Initialize empty array.
   // Input HxW = 96 X 160 (1 channel)
-  //std::vector<int64_t> input_shape = {1, 1, 96, 160};
-  //std::vector<float> input_storage(1 * 1 * 96 * 160);
+  std::vector<int64_t> input_shape = {1, 1, 96, 160};
+  std::vector<float> input_storage(1 * 1 * 96 * 160);
 
   // Initialize and load input image.
   FILE * in_fp = fopen("lib/img.bin", "rb");
+  size_t in_sz = fread(input_storage.data(), 1*1*96*160, 4, in_fp);
   //size_t in_sz = fread(input_storage.data(), 1*1*192*320, 4, in_fp);
-  size_t in_sz = fread(input_storage.data(), 1*3*352*608, 4, in_fp);
+  //size_t in_sz = fread(input_storage.data(), 1*3*352*608, 4, in_fp);
   fclose(in_fp);
 
   // Assign random numbers to each input value
@@ -145,14 +98,14 @@ void RunGraph(tvm::runtime::Module mod) {
   input.byte_offset = 0;
   
   // Output shapes for input HxW = 352 X 608 (3 channel)
-  std::vector<int64_t> output_shape = {1, 24, 44, 76};
-  std::vector<float> output_storage(1 * 24 * 44 * 76);
+  //std::vector<int64_t> output_shape = {1, 24, 44, 76};
+  //std::vector<float> output_storage(1 * 24 * 44 * 76);
   // Output shapes for input HxW = 192 X 320 (1 channel)
-  //std::vector<int64_t> output_shape = {12};
-  //std::vector<float> output_storage(1 * 12);
+  //std::vector<int64_t> output_shape = {1, 18, 12, 20};
+  //std::vector<float> output_storage(1 * 18 * 12 * 20);
   // Output shapes for input HxW = 96 X 160 (1 channel)
-  //std::vector<int64_t> output_shape = {1, 18, 6, 10};
-  //std::vector<float> output_storage(1 * 18 * 6 * 10);
+  std::vector<int64_t> output_shape = {1, 18, 6, 10};
+  std::vector<float> output_storage(1 * 18 * 6 * 10);
 
   DLTensor output;
   output.data = output_storage.data();
@@ -177,9 +130,10 @@ void RunGraph(tvm::runtime::Module mod) {
   std::cout << "Output Extracted\n";
 
   // Write output to file
-  FILE * out_fp = fopen("lib/output.bin", "wb");
-  size_t out_sz = fwrite(output_storage.data(), 1 * 24 * 44 * 76, 4, out_fp);
-  fclose(out_fp);
+  //FILE * out_fp = fopen("lib/output.bin", "wb");
+  //size_t out_sz = fwrite(output_storage.data(), 1 * 24 * 44 * 76, 4, out_fp);
+  //size_t out_sz = fwrite(output_storage.data(), 1 * 18 * 12 * 20, 4, out_fp);
+  //fclose(out_fp);
 
   // Calculating total time taken by the program. 
   auto elapsed = std::chrono::high_resolution_clock::now() - start;
@@ -204,9 +158,7 @@ void RunGraph(tvm::runtime::Module mod) {
 int main(void) {
   // For libraries that are directly packed as system lib and linked together with the app
   // We can directly use GetSystemLib to get the system wide library.
-  std::cout << "Verify load function from system lib\n";
   tvm::runtime::Module mod_syslib = (*tvm::runtime::Registry::Get("runtime.SystemLib"))();
-  Verify(mod_syslib, "addonesys");
   tvm::runtime::Module mod = PrepareRuntime(mod_syslib);
   // Perform first run to initialize.
   RunGraph(mod);

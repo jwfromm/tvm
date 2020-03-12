@@ -11,8 +11,18 @@ def main():
     mod = relay.fromtext(open(os.path.join(model_dir, "model.txt"), "r").read())
     params = relay.load_param_dict(open(os.path.join(model_dir, "model.params"), "rb").read())
 
-    #target="llvm -target=mipsel-linux-gnu -mcpu=mips32 --system-lib"
-    target="llvm --system-lib"
+    # Replace uninitialized parameters
+    for key in params.keys():
+        value = params[key].asnumpy()
+        if np.any(value > 1e5):
+            new_value = np.random.normal(size=value.shape).astype(value.dtype)
+            params[key] = tvm.nd.array(new_value)
+
+    target="llvm -target=mipsel-linux-gnu -mcpu=mips32 --system-lib"
+    #target="llvm --system-lib"
+    # Quantize model to int8
+    with relay.quantize.qconfig(calibrate_mode='global_scale', global_scale=8.0):
+        mod = relay.quantize.quantize(mod, params)
     with relay.build_config(opt_level=3):
         graph, lib, params=relay.build(mod, target=target, params=params)    
 
@@ -31,14 +41,15 @@ def main():
     image_path = os.path.join(data_dir, "person.jpg")
     image = Image.open(image_path)
     # Convert to grayscale
-    #image = image.convert("L")
+    image = image.convert("L")
     # Resize to WxH = 320x192
+    image = image.resize((160, 96))
     #image = image.resize((320, 192))
-    image = image.resize((608, 352))
+    #image = image.resize((608, 352))
 
     def transform_image(image):
-        #image = np.expand_dims(np.array(image), axis=-1)
-        image = np.array(image)
+        image = np.expand_dims(np.array(image), axis=-1)
+        #image = np.array(image)
         image = image / 255
         image = image.transpose(2, 0, 1)
         image = np.expand_dims(np.array(image), axis=0)
