@@ -748,7 +748,7 @@ def _convert_bitserial_convolution(inexpr, keras_layer, etab):
               'kernel_size': [kernel_h, kernel_w],
               'strides': [stride_h, stride_w],
               'padding': [0, 0],
-              'activation_bits': keras_layer.bits,
+              'activation_bits': int(keras_layer.bits),
               'weight_bits': 1,
               'out_dtype': 'int16',
               'pack_dtype': 'uint8',
@@ -962,7 +962,8 @@ _convert_map = {
     'BinaryConv2D'             : _convert_bitserial_convolution,
     'BinaryDense'              : _convert_bitserial_dense,
     'ShiftNormalization'       : _convert_shiftnorm,
-    'Scalu'                    : _convert_scalu
+    'Scalu'                    : _convert_scalu,
+    'SpecialBatchNorm'         : _convert_batchnorm
 }
 
 
@@ -1110,7 +1111,7 @@ def from_keras(model, shape=None, layout='NCHW'):
                 op_name = keras_layer.output.name
                 for c in keras_layer.output.consumers():
                     for o in c.outputs:
-                        if o in model.outputs:
+                        if o.name in [mo.name for mo in model.outputs]:
                             op_name = o.name
                 # Add the op to our graph.
                 keras_op_to_relay(inexpr, keras_layer, op_name, etab)
