@@ -842,6 +842,26 @@ def _default_skip(inexpr, keras_layer, _): # pylint: disable=unused-argument
     return inexpr
 
 
+def _convert_octogemm(inexpr, keras_layer, etab):
+    # Extract the weights
+    weights = keras_layer.get_weights()[0]
+    # Extract the number of legs
+    # Note that because the legs are an integer we need to convert to a relay constant.
+    legs = _expr.const(keras_layer.legs, dtype='float32')
+
+    # Perform matrix multiplication
+    # Important to note, relay has no matmul operator, only dense (someone add it please)
+    # although almost identical, dense expects inputs to be 
+    # size [M, K] and weights to be size [M, K] while traditional matmul has
+    # inputs with size [M, K] and weights with size [K, M]. Thus we insert
+    # a transpose. Because the weights are a parameter, we store them in etab.
+    relay_weight = etab.new_const(weights.transpose([1, 0]))
+    gemm_output = _op.nn.dense(inexpr, relay_weight)
+
+    # Now we can multiply in the legs and return
+    return gemm_output * legs
+
+
 _convert_map = {
     'Dense'                    : _convert_dense,
     'Activation'               : _convert_activation,
@@ -914,6 +934,7 @@ _convert_map = {
     'SpatialDropout1D'         : _default_skip,
     'GaussianDropout'          : _default_skip,
     'GaussianNoise'            : _default_skip,
+    'OctoGemm'                 : _convert_octogemm,
 }
 
 

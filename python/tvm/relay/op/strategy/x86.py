@@ -234,22 +234,28 @@ def dense_strategy_cpu(attrs, inputs, out_type, target):
     """dense x86 strategy"""
     strategy = _op.OpStrategy()
     m, _ = inputs[0].shape
-    strategy.add_implementation(wrap_compute_dense(topi.x86.dense_nopack),
-                                wrap_topi_schedule(topi.x86.schedule_dense_nopack),
-                                name="dense_nopack.x86",
+    strategy.add_implementation(wrap_compute_dense(topi.octogemm.dense_octogemm),
+                                wrap_topi_schedule(topi.octogemm.schedule_dense_octogemm),
+                                name="dense_octogemm.x86",
                                 plevel=10)
-    if "cblas" in target.libs:
-        strategy.add_implementation(wrap_compute_dense(topi.x86.dense_cblas),
-                                    wrap_topi_schedule(topi.x86.schedule_dense_cblas),
-                                    name="dense_cblas.x86",
-                                    plevel=15)
-    with SpecializedCondition(m >= 16):
-        # this implementation may not be well-optimized, so use plevel=8 for now.
-        strategy.add_implementation(wrap_compute_dense(topi.x86.dense_pack),
-                                    wrap_topi_schedule(topi.x86.schedule_dense_pack),
-                                    name="dense_pack.x86",
-                                    plevel=5)
     return strategy
+
+#    strategy.add_implementation(wrap_compute_dense(topi.x86.dense_nopack),
+#                                wrap_topi_schedule(topi.x86.schedule_dense_nopack),
+#                                name="dense_nopack.x86",
+#                                plevel=10)
+#    if "cblas" in target.libs:
+#        strategy.add_implementation(wrap_compute_dense(topi.x86.dense_cblas),
+#                                    wrap_topi_schedule(topi.x86.schedule_dense_cblas),
+#                                    name="dense_cblas.x86",
+#                                    plevel=15)
+#    with SpecializedCondition(m >= 16):
+#        # this implementation may not be well-optimized, so use plevel=8 for now.
+#        strategy.add_implementation(wrap_compute_dense(topi.x86.dense_pack),
+#                                    wrap_topi_schedule(topi.x86.schedule_dense_pack),
+#                                    name="dense_pack.x86",
+#                                    plevel=5)
+#    return strategy
 
 @batch_matmul_strategy.register("cpu")
 def batch_matmul_strategy_cpu(attrs, inputs, out_type, target):
