@@ -32,7 +32,7 @@ namespace relay {
 
 Expr DeDup(const Expr& e) {
   class DeDupMutator : public TypeMutator,
-                       public ExprMutator,
+                       public MixedModeMutator,
                        public PatternMutator {
    public:
     TypeVar Fresh(const TypeVar& tv) {
@@ -49,7 +49,7 @@ Expr DeDup(const Expr& e) {
       return ret;
     }
 
-    Expr VisitExpr(const Expr& e) final {
+    Expr DispatchVisitExpr(const Expr& e) final {
       auto ret = ExprMutator::VisitExpr(e);
       ret->checked_type_ = e->checked_type_;
       return ret;

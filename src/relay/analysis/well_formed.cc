@@ -31,7 +31,7 @@ namespace relay {
 
 
 //! brief make sure each Var is bound at most once in a scope.
-class WellFormedChecker : private ExprVisitor, PatternVisitor {
+class WellFormedChecker : private MixedModeVisitor, PatternVisitor {
   bool well_formed = true;
 
   std::vector<std::unordered_set<Var, ObjectHash, ObjectEqual>> scope;
@@ -106,7 +106,7 @@ class WellFormedChecker : private ExprVisitor, PatternVisitor {
     Bound(v);
   }
 
-  void VisitExpr(const Expr& e) final {
+  void VisitLeaf(const Expr& e) final {
     if (auto v = e.as<VarNode>()) {
       VisitExpr_(v);
     } else {
