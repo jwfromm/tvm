@@ -1,12 +1,30 @@
-Step
-----
+# HuggingFace TVM Demo
 
-0. build tvm
+This application downloads a HuggingFace transformer model, imports it into Relay,
+then benchmarks its performance on CPU or GPU for both dense and block sparse versions
+of the model.
 
-1. cd ```hf_extension```
+To get setup, follow the installation instructions [here](https://tvm.apache.org/docs/install/from_source.html).
+Make sure to enable LLVM and CUDA in the build config so both platforms can be tested.
 
-2. run ```Make```
+Once TVM is built and ready to go, we need to compile a few custom passes that are used
+to optimize HF models. Do so by running `make` in the `hf_extension` directory.
 
-3. run ```python download_model.py --family bert --name bert-base-uncased```
+Now you're ready to start benchmarking! You can try out the default configuration by
+running
 
-4. run ```python run_sparse.py --bs_r 16 --sparsity 0.85```
+`python hf_demo.py`
+
+This will benchmarking a `bert-base-uncased` model on CPU with `batch_size=1` and `seq_len=128`.
+
+`hf_demo.py` supports many command line arguments. Here's a quick rundown of each.
+
+* --family sets the type of transformer model that should be run, defaults to `bert`.
+* --name sets the specific model to be downloaded and run, defaults to 'bert-base-uncased'.
+* --batch_size sets the input batch size to be benchmarked, defaults to '1'.
+* --seq_len sets the input sequence length, defaults to `128`.
+* --platform determines what hardware to benchmark on, must be either `cpu` or `gpu`. Defaults to `cpu`.
+* --extract_llvm_options is an optional argument that determines all features (such as AVX512) that are available on the host machine and compiles for them. Worth giving a shot to see if it improves performance over the default `llvm` CPU target.
+* --run_sparse is a flag that benchmarks a block sparse version of the model when set. This only works when `platform = cpu`.
+* --bs_r sets the block size for sparsity. Defaults to `16`.
+* --sparsity determines the percentage of zero parameters to test. Defaults `0.85`. Higher sparsity will yield larger speedups.
