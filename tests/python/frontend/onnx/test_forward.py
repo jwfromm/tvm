@@ -64,6 +64,7 @@ def get_tvm_output(graph_def, input_data, target, ctx, output_shape=None, output
     input_names, shape_dict = get_input_data_shape_dict(graph_def, input_data)
 
     mod, params = relay.frontend.from_onnx(graph_def, shape_dict, opset=opset)
+    print(mod['main'])
     with relay.build_config(opt_level=1):
         graph, lib, params = relay.build(mod,
                                          target,
@@ -329,12 +330,8 @@ def test_squeeze():
     tvm.testing.assert_allclose(out_shape, tvm_out.shape)
 
 
-def test_flatten():
-
-    in_shape = (1, 3, 4, 4)
-    axis = 1
-    ref_shape = (1, 48)
-
+def verify_flatten(in_shape, axis):
+    out_shape = [int(np.prod(in_shape[:axis])), int(np.prod(in_shape[axis:]))]
     flatten_node = helper.make_node("Flatten", ["in"], ["out"], axis=axis)
 
     graph = helper.make_graph([flatten_node],
@@ -342,15 +339,26 @@ def test_flatten():
                               inputs=[helper.make_tensor_value_info("in",
                                                                     TensorProto.FLOAT, list(in_shape))],
                               outputs=[helper.make_tensor_value_info("out",
-                                                                     TensorProto.FLOAT, list(ref_shape))])
+                                                                     TensorProto.FLOAT, list(out_shape))])
 
     model = helper.make_model(graph, producer_name='flatten_test')
 
     for target, ctx in ctx_list():
-        x = np.random.uniform(size=in_shape).astype('int32')
-        tvm_out = get_tvm_output(model, x, target, ctx, ref_shape, 'float32')
+        x = np.random.uniform(size=in_shape).astype('float32')
+        tvm_out = get_tvm_output(model, x, target, ctx)
+        onnx_out = get_onnxruntime_output(model, x, 'float32')
 
-    tvm.testing.assert_allclose(ref_shape, tvm_out.shape)
+    tvm.testing.assert_allclose(tvm_out, onnx_out)
+
+
+
+def test_flatten():
+    verify_flatten((1, 3, 4, 4), 1)
+    verify_flatten((1, 4, 4), 2)
+    verify_flatten((5, 5, 5), 0)
+    verify_flatten((5, 5, 5), 1)
+    verify_flatten((1, 3, 4, 4), -1)
+    verify_flatten((1, 3, 4, 4), -2)
 
 
 def test_unsqueeze():
@@ -399,6 +407,8 @@ def verify_gather(in_shape, indices, axis, dtype):
 
 
 def test_gather():
+    data = np.random.randn(4, 4, 1).astype('float32')
+    verify_gather(data, [4, 8, 9, 12, 13, 14], 0, 'float32')
     verify_gather((4,), [1], 0, 'int32')
     verify_gather((1, 4), [0], 0, 'int32')
     verify_gather((4,), [[[1, 0], [0, 1]]], 0, 'float32')
@@ -2494,7 +2504,38 @@ def test_roi_align():
                      sampling_ratio=2, spatial_scale=1.0)
 
 
+def test_aten():
+    torch.set_grad_enabled(False)
+    def _convert_to_onnx(model, inputs):
+        file_name = '{}.onnx'.format("aten_model")
+        torch.onnx.export(model, inputs, file_name,
+                        export_params=True, verbose=False)
+        onnx_model = onnx.load(file_name)
+        return onnx_model
+        
+    def verify_embedding_bag(num_embedding, embedding_dim, data_shape, num_bags=None):
+        dummy_data = torch.randint(0, num_embedding - 1, data_shape)
+        dummy_offsets = None
+        tvm_inputs = [dummy_data.numpy()]
+        if len(data_shape) == 1:
+            assert num_bags is not None, "num_bags must be specified for 1-D input."
+            offset_stride = data_shape[0] / num_bags
+            dummy_offsets = torch.LongTensor([i * offset_stride for i in range(num_bags)])
+            tvm_inputs.append(dummy_offsets.numpy())
+        model = torch.nn.EmbeddingBag(num_embedding, embedding_dim)
+        onnx_model = _convert_to_onnx(model, dummy_data)
+        torch_out = model(dummy_data, dummy_offsets)
+        for target, ctx in ctx_list():
+            tvm_out = get_tvm_output(onnx_model, tvm_inputs, target, ctx)
+            print(tvm_out)
+            exit()
+
+    
+    verify_embedding_bag(10, 3, [2, 10])
+
+
 if __name__ == '__main__':
+    test_aten()
     test_flatten()
     test_reshape()
     test_shape()
@@ -2560,4 +2601,4 @@ if __name__ == '__main__':
     test_resize()
     test_nonzero()
     test_topk()
-    test_roialign()
+    test_roi_align()

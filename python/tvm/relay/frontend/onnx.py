@@ -598,8 +598,13 @@ class Flatten(OnnxOpConverter):
         if axis == 1:
             out = _op.nn.batch_flatten(inputs[0])
         else:
-            newshape = [0] * (axis + 1)
-            newshape[axis] = -1
+            # Flatten in Onnx should always return a 2D value.
+            # The axis argument indicates which of the two output
+            # axes input axes should be flattened into.
+            # To convert to relay, we need to determine the input
+            # shape and find the 2D output accordingly.
+            input_shape = infer_shape(inputs[0])
+            newshape = int(np.prod(input_shape[:axis])), int(np.prod(input_shape[axis:]))
             out = _op.reshape(inputs[0], list(newshape))
         return out
 
@@ -1477,6 +1482,10 @@ class NonZero(OnnxOpConverter):
             raise ValueError("Expect 1 input only")
 
         output = AttrCvt(op_name='argwhere')(inputs, attr, params)
+        # Check if this output needs to be int64 instead of int32
+        dtype = infer_type(inputs[0])._checked_type_.dtype
+        if dtype == 'int64':
+            output = _op.cast(output, 'int64')
         return _op.transpose(output, axes=(1, 0))
 
 class TopK(OnnxOpConverter):
@@ -1523,6 +1532,43 @@ class RoiAlign(OnnxOpConverter):
 
         return _vision.roi_align(x, rois, [output_height, output_width],
                                  spatial_scale, sampling_ratio)
+
+
+class ATen(OnnxOpConverter):
+    """Operator converter for Pytorch ATen ops.
+    """
+
+    @classmethod
+    def _op_dispatch(cls, operator, inputs, attr, params):
+        op_map = {
+            'embedding_bag': cls._embedding_bag,
+        }
+        assert operator in op_map, ("Operator %s is not supported." % operator)
+        return op_map[operator](inputs, attr, params)
+
+    @classmethod
+    def _embedding_bag(cls, inputs, attr, params):
+        mode_map = {0: _op.sum, 1: _op.mean, 2: _op.max}
+
+        redux = mode_map[attr['mode']]
+        weights, indices, offsets = inputs
+        offsets_shape = infer_shape(offsets)
+        # In some cases, shape may be ?, we need to infer it to continue.
+        if not isinstance(offsets_shape[0], int):
+            offsets_shape = infer_value_simulated(offsets, params).asnumpy().shape
+        indices = _op.reshape(indices, [offsets_shape[0], -1])
+        embedding = _op.take(weights, indices.astype('int64'), axis=0)
+        rembedding = redux(embedding, axis=1)
+        unused = _expr.const(0, dtype='float32')
+        return _expr.TupleWrapper(
+            _expr.Tuple((rembedding, unused, unused, unused)), 4)
+
+    @classmethod
+    def _impl_v1(cls, inputs, attr, params):
+        operator = attr.get("operator", None).decode('utf-8')
+        assert operator, "ATen Operator not found"
+        return cls._op_dispatch(operator, inputs, attr, params)
+
 
 # compatible operators that do NOT require any conversion.
 _identity_list = []
@@ -1664,6 +1710,9 @@ def _get_convert_map(opset):
         'Or': Or.get_converter(opset),
         'Resize': Resize.get_converter(opset),
         'NonZero': NonZero.get_converter(opset),
+
+        # Torch ATen Dispatcher.
+        'ATen': ATen.get_converter(opset),
     }
 
 
