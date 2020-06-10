@@ -6,9 +6,9 @@ from transformers import *
 import click
 
 
-def load_keras_model(module, seq_len=128, batch_size=1, report_runtime=False):
+def load_keras_model(module, name, seq_len=128, batch_size=1, report_runtime=True):
     # Load dataset, tokenizer, model from pretrained model/vocabulary
-    model = module.from_pretrained('bert-base-cased')
+    model = module.from_pretrained(name)
     dummy_input = tf.keras.Input(shape=[seq_len], batch_size=batch_size, dtype='int32')
     dummy_out = model(dummy_input)
     if report_runtime:
@@ -24,12 +24,14 @@ def load_keras_model(module, seq_len=128, batch_size=1, report_runtime=False):
     return model
 
 
-def convert_to_graphdef(model):
+def convert_to_graphdef(model, batch_size=1, seq_len=128):
     from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2
     # Try to convert model to concrete function
     model_func = tf.function(lambda x: model(x))
+    input_dict = model._saved_model_inputs_spec
+    input_spec = input_dict[list(input_dict.keys())[0]]
     model_func = model_func.get_concrete_function(
-        tf.TensorSpec(model.inputs[0].shape, model.inputs[0].dtype))
+        tf.TensorSpec([batch_size, seq_len], input_spec.dtype))
     # freeze
     frozen_func = convert_variables_to_constants_v2(model_func)
     return frozen_func.graph.as_graph_def()
@@ -41,5 +43,5 @@ def download_model(family='bert', name='bert-base-uncased', batch_size=1, seq_le
         module = getattr(transformers, "TFBertForSequenceClassification")
     else:
         raise NotImplementedError
-    model = load_keras_model(module, report_runtime=False, batch_size=batch_size, seq_len=seq_len)
-    return convert_to_graphdef(model)
+    model = load_keras_model(module, name=name, report_runtime=False, batch_size=batch_size, seq_len=seq_len)
+    return convert_to_graphdef(model, batch_size, seq_len)
