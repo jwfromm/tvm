@@ -28,3 +28,10 @@ This will benchmarking a `bert-base-uncased` model on CPU with `batch_size=1` an
 * --run_sparse is a flag that benchmarks a block sparse version of the model when set. This only works when `platform = cpu`.
 * --bs_r sets the block size for sparsity. Defaults to `16`.
 * --sparsity determines the percentage of zero parameters to test. Defaults `0.85`. Higher sparsity will yield larger speedups.
+
+# PruneBert Support
+This demo now enables speedups on prepruned HuggingFace models out of the box! To run a pruned BERT model call the script as follows:
+`python hf_demo.py --name huggingface/prunebert-base-uncased-6-finepruned-w-distil-squad --run_sparse`
+You should find that using TVM's sparse computation speeds up model execution by something like 2-4X. You can also try playing around
+with the block size setting (`--bs_r`) as different block sizes may work well on different CPUs. Note that this is being run
+with the **real bert weights**, not simulated sparse weights as in the unpruned models.
