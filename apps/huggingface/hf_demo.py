@@ -113,7 +113,7 @@ def import_graphdef(
     batch_size=1,
     seq_len=128,
     save_relay=True,
-    relay_file="model.txt",
+    relay_file="model.json",
     relay_params="model.params",
 ):
     abs_path = os.path.dirname(os.path.abspath(__file__))
@@ -202,7 +202,7 @@ def run(
     print("Dense Model:")
     dense_output = run_relay_graph(mod, params, shape_dict, target, ctx)
 
-    if run_sparse and platform == "cpu":
+    if run_sparse:
         print("Block Sparse Model with {blocksize}x1 blocks:".format(blocksize=bs_r))
         mod, params = ddo.bsr_dense.convert(
             mod, params, (bs_r, 1), sparsity_threshold=0.8
@@ -212,8 +212,6 @@ def run(
         np.testing.assert_allclose(
             dense_output.asnumpy(), sparse_output.asnumpy(), atol=1e-4, rtol=1e-4
         )
-    elif run_sparse:
-        print("Block sparsity currently only supported on cpu.")
 
 
 if __name__ == "__main__":

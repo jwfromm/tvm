@@ -86,10 +86,10 @@ class RemoveRedundantReshapeMutator : public ExprRewriter {
         if (arg) {
           const auto attrs = reshape_op->attrs.as<ReshapeAttrs>();
           const auto ty = reshape_op->checked_type_.as<TensorTypeNode>();
-          if (attrs->newshape.size() == ty->shape.size()) {
+          if (attrs->newshape.value().size() == ty->shape.size()) {
             bool equal = true;
-            for (size_t i = 0; i < attrs->newshape.size(); ++i) {
-              if (ty->shape[i].as<IntImmNode>()->value != attrs->newshape[i]->value) {
+            for (size_t i = 0; i < attrs->newshape.value().size(); ++i) {
+              if (ty->shape[i].as<IntImmNode>()->value != attrs->newshape.value()[i].as<IntImmNode>()->value) {
                 equal = false;
                 break;
               }
