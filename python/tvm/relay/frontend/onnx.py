@@ -128,18 +128,6 @@ def dimension_picker(prefix, suffix=''):
     return _impl
 
 
-def revert_caffe2_pad(pads):
-    """Caffe2 requires two times the normal padding."""
-    if len(pads) == 4:
-        pads = pads[:2]
-    elif len(pads) == 2:
-        pass
-    else:
-        raise tvm.error.OpAttributeInvalid(
-            'Number of pads must be either 2 or 4.')
-    return pads
-
-
 def get_pad_pair(input1d, kernel1d, stride1d):
     """infer pad size"""
     if input1d % stride1d == 0:
@@ -149,6 +137,34 @@ def get_pad_pair(input1d, kernel1d, stride1d):
     pad_before = pad // 2
     pad_after = pad - pad_before
     return [pad_before, pad_after]
+
+
+def get_autopad(input_shape, attr):
+    attr['auto_pad'] = attr['auto_pad'].decode('utf-8')
+    if attr['auto_pad'] in ('SAME_UPPER', 'SAME_LOWER'):
+        pad_tuple = []
+        for axis in range(len(input_shape) - 2):
+            axis_shape = input_shape[2 + axis]
+            stride = attr['strides'][axis]
+            kernel = attr['kernel_shape'][axis]
+            if 'dilations' in attr:
+                dilation = attr['dilations'][axis]
+                dilated_kernel = (kernel - 1) * dilation + 1
+            else:
+                dilated_kernel = kernel
+            pad = get_pad_pair(axis_shape, dilated_kernel, stride)
+            pad_tuple.append(pad)
+        pad_tuple = tuple([val for pair in zip(*pad_tuple) for val in pair])
+        attr['pads'] = pad_tuple
+    elif attr['auto_pad'] == 'VALID':
+        attr['pads'] = tuple([0 for i in range(len(input_shape) - 2)])
+    elif attr['auto_pad'] == 'NOTSET':
+        pass
+    else:
+        msg = 'Value {} in attribute "auto_pad" is invalid.'
+        raise tvm.error.OpAttributeInvalid(msg.format(attr['auto_pad']))
+    attr.pop('auto_pad')
+    return attr
 
 
 def onnx_default_layout(dims):
@@ -259,25 +275,7 @@ class Pool(OnnxOpConverter):
     def _impl_v1(cls, inputs, attr, params):
         input_shape = infer_shape(inputs[0])
         if 'auto_pad' in attr:
-            attr['auto_pad'] = attr['auto_pad'].decode('utf-8')
-            if attr['auto_pad'] in ('SAME_UPPER', 'SAME_LOWER'):
-                pad_tuple = []
-                for axis in range(len(input_shape) - 2):
-                    axis_shape = input_shape[2 + axis]
-                    stride = attr['strides'][axis]
-                    kernel = attr['kernel_shape'][axis]
-                    pad = get_pad_pair(axis_shape, kernel, stride)
-                    pad_tuple.append(pad)
-                pad_tuple = tuple([val for pair in zip(*pad_tuple) for val in pair])
-                attr['pads'] = pad_tuple
-            elif attr['auto_pad'] == 'VALID':
-                attr['pads'] = 0
-            elif attr['auto_pad'] == 'NOTSET':
-                pass
-            else:
-                msg = 'Value {} in attribute "auto_pad" of operator {} is invalid.'
-                raise tvm.error.OpAttributeInvalid(msg.format(attr['auto_pad'], cls.name))
-            attr.pop("auto_pad")
+            attr = get_autopad(input_shape, attr)
 
         if 'storage_order' in attr:
             attr['layout'] = onnx_storage_order2layout(attr['storage_order'],
@@ -345,27 +343,8 @@ class Conv(OnnxOpConverter):
         # Use shape of input to determine convolution type.
         input_shape = infer_shape(inputs[0])
         if 'auto_pad' in attr:
-            attr['auto_pad'] = attr['auto_pad'].decode('utf-8')
-            if attr['auto_pad'] in ('SAME_UPPER', 'SAME_LOWER'):
-                pad_tuple = []
-                for axis in range(len(input_shape) - 2):
-                    axis_shape = input_shape[2 + axis]
-                    stride = attr['strides'][axis]
-                    kernel = attr['kernel_shape'][axis]
-                    dilation = attr['dilations'][axis]
-                    dilated_kernel = (kernel - 1) * dilation + 1
-                    pad = get_pad_pair(axis_shape, dilated_kernel, stride)
-                    pad_tuple.append(pad)
-                pad_tuple = tuple([val for pair in zip(*pad_tuple) for val in pair])
-                attr['pads'] = pad_tuple
-            elif attr['auto_pad'] == 'VALID':
-                attr['pads'] = tuple([0 for i in range(len(input_shape) - 2)])
-            elif attr['auto_pad'] == 'NOTSET':
-                pass
-            else:
-                msg = 'Value {} in attribute "auto_pad" of operator Conv is invalid.'
-                raise tvm.error.OpAttributeInvalid(msg.format(attr['auto_pad']))
-            attr.pop('auto_pad')
+            attr = get_autopad(input_shape, attr)
+
         elif len(attr['kernel_shape']) == 2:
             sym_pad = True
             if 'pads' in attr:
@@ -399,43 +378,23 @@ class ConvTranspose(OnnxOpConverter):
     """
     @classmethod
     def _impl_v1(cls, inputs, attr, params):
-        # get number of channels
-        channels = infer_channels(inputs[1], True)
-        attr['channels'] = channels
-        groups = attr.pop('group')
-        attr['groups'] = groups
-        # infer pads for auto_pad
+        # Get the input shape.
+        input_shape = infer_shape(inputs[0])
+        # Infer pad tuples if auto_pad is set.
         if 'auto_pad' in attr:
-            attr['auto_pad'] = attr['auto_pad'].decode('utf-8')
-            if attr['auto_pad'] in ('SAME_UPPER', 'SAME_LOWER'):
-                input_shape = infer_shape(inputs[0])
-                in_h, in_w = input_shape[2], input_shape[3]
-                stride_h, stride_w = attr['strides']
-                kernel_h, kernel_w = attr['kernel_shape']
-                dilation_h, dilation_w = attr['dilations']
-                dilated_kernel_h = (kernel_h - 1) * dilation_h + 1
-                dilated_kernel_w = (kernel_w - 1) * dilation_w + 1
-                pad_v = get_pad_pair(in_h, dilated_kernel_h, stride_h)
-                pad_h = get_pad_pair(in_w, dilated_kernel_w, stride_w)
-                attr['pads'] = (pad_v[0], pad_h[0], pad_v[1], pad_h[1])
-            elif attr['auto_pad'] == 'VALID':
-                attr['pads'] = (0, 0)
-            elif attr['auto_pad'] == 'NOTSET':
-                pass
-            else:
-                msg = 'Value {} in attribute "auto_pad" of operator Conv is invalid.'
-                raise tvm.error.OpAttributeInvalid(msg.format(attr['auto_pad']))
-            attr.pop('auto_pad')
+            attr = get_autopad(input_shape, attr)
 
         out = AttrCvt(
             op_name=dimension_picker('conv', '_transpose'),
             transforms={
                 'kernel_shape': 'kernel_size',
-                'dilations': ('dilation', (0, 0)),
-                'pads': ('padding', (0, 0), revert_caffe2_pad)
+                'dilations': ('dilation', 1),
+                'pads': ('padding', 0),
+                'group': ('groups', 1)
             },
             disables=['output_shape'],
             custom_check=dimension_constraint())(inputs[:2], attr, params)
+
         use_bias = len(inputs) == 3
         if use_bias:
             out = _op.nn.bias_add(out, inputs[2])
@@ -551,25 +510,7 @@ class LpPool(OnnxOpConverter):
         dtype = infer_type(inputs[0]).checked_type.dtype
 
         if 'auto_pad' in attr:
-            attr['auto_pad'] = attr['auto_pad'].decode('utf-8')
-            if attr['auto_pad'] in ('SAME_UPPER', 'SAME_LOWER'):
-                pad_tuple = []
-                for axis in range(len(input_shape) - 2):
-                    axis_shape = input_shape[2 + axis]
-                    stride = attr['strides'][axis]
-                    kernel = attr['kernel_shape'][axis]
-                    pad = get_pad_pair(axis_shape, kernel, stride)
-                    pad_tuple.append(pad)
-                pad_tuple = tuple([val for pair in zip(*pad_tuple) for val in pair])
-                attr['pads'] = pad_tuple
-            elif attr['auto_pad'] == 'VALID':
-                attr['pads'] = 0
-            elif attr['auto_pad'] == 'NOTSET':
-                pass
-            else:
-                msg = 'Value {} in attribute "auto_pad" of operator {} is invalid.'
-                raise tvm.error.OpAttributeInvalid(msg.format(attr['auto_pad'], "LpPool"))
-            attr.pop("auto_pad")
+            attr = get_autopad(input_shape, attr)
 
         if 'storage_order' in attr:
             attr['layout'] = onnx_storage_order2layout(attr['storage_order'],

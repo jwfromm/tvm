@@ -2216,22 +2216,29 @@ def test_conv():
                     repeat(1, D),
                     repeat(2, D))
 
-def verify_convtranspose(x_shape, w_shape, y_shape, p):
-    node = onnx.helper.make_node("ConvTranspose",
-                                 inputs=["x", "W"],
-                                 outputs=['y'],
-                                 strides=[3, 2],
-                                 group=1,
-                                 kernel_shape=[3, 3],
-                                 pads=p)
+
+def verify_convtranspose(x_shape, w_shape, y_shape, kernel_shape, strides, dilations, auto_pad=None, padding=None):
+    node = helper.make_node('ConvTranspose',
+                            inputs=['x', 'W'],
+                            outputs=['y'],
+                            kernel_shape=kernel_shape,
+                            strides=strides,
+                            dilations=dilations)
+
+    if auto_pad is not None:
+        auto_pad_attr = helper.make_attribute('auto_pad', auto_pad)
+        node.attribute.append(auto_pad_attr)
+    if padding is not None:
+        pad_attr = helper.make_attribute('pads', padding)
+        node.attribute.append(pad_attr)
 
     graph = helper.make_graph([node],
-                              'verify_convtranspose_test',
+                              'convtranspose_test',
                               inputs=[helper.make_tensor_value_info("x", TensorProto.FLOAT, list(x_shape)),
                                       helper.make_tensor_value_info("W", TensorProto.FLOAT, list(w_shape))],
                               outputs=[helper.make_tensor_value_info("y", TensorProto.FLOAT, list(y_shape))])
 
-    model = helper.make_model(graph, producer_name='convtranspose_trest')
+    model = helper.make_model(graph, producer_name='convtranspose_test')
 
     for target, ctx in ctx_list():
         x = np.random.uniform(size=x_shape).astype('float32')
@@ -2247,7 +2254,28 @@ def test_convtranspose():
     # (1, 2, 3, 3) tensor for convolution weights
     # (1, 2, 7, 3) output tensor
     # [1, 2, 1, 2] list for pads
-    verify_convtranspose((1, 1, 3, 3), (1, 2, 3, 3), (1, 2, 7, 3), [1, 2, 1, 2])
+    #verify_convtranspose((1, 1, 3, 3), (1, 2, 3, 3), (1, 2, 7, 3), [1, 2, 1, 2])
+
+    def repeat(N, D):
+        return tuple([N for _ in range(D)])
+
+    for D in [1, 2, 3]:
+        # Transpose Convolution with padding
+        #verify_convtranspose(x_shape=(1, 1) + repeat(5, D), 
+        #                     w_shape=(1, 1) + repeat(3, D),
+        #                     y_shape=(1, 1) + repeat(5, D), 
+        #                     kernel_shape=repeat(3, D), 
+        #                     strides=repeat(1, D), 
+        #                     dilations=repeat(1, D),
+        #                     padding=2 * repeat(1, D))
+        # Transpose Convolution with autopadding
+        verify_convtranspose(x_shape=(1, 1) + repeat(5, D), 
+                             w_shape=(1, 1) + repeat(3, D),
+                             y_shape=(1, 1) + repeat(11, D), 
+                             kernel_shape=repeat(3, D), 
+                             strides=repeat(2, D), 
+                             dilations=repeat(1, D),
+                             auto_pad='SAME_UPPER')
 
 
 def test_unsqueeze_constant():
@@ -3086,75 +3114,75 @@ def test_roi_align():
 
 
 if __name__ == '__main__':
-    test_flatten()
-    test_reshape()
-    test_shape()
-    test_expand()
-    test_power()
-    test_squeeze()
-    test_unsqueeze()
-    test_slice()
-    test_floor()
-    test_ceil()
-    test_round()
-    test_isinf()
-    test_isnan()
-    test_clip()
-    test_onehot()
-    test_matmul()
-    test_batch_matmul()
-    test_gather()
-    test_gather_nd()
-    test_scatter()
-    test_lrn()
-    test_instance_norm()
-    test_upsample()
-    test_forward_min()
-    test_forward_max()
-    test_forward_mean()
-    test_forward_hardsigmoid()
-    test_forward_arg_min_max()
-    test_softmax()
-    test_constantofshape()
-    test_all_reduce_funcs()
-    test_pad()
-    test_split()
-    test_binary_ops()
-    test_single_ops()
-    test_leaky_relu()
-    test_elu()
-    test_selu()
-    test_prelu()
-    test_ThresholdedRelu()
-    test_ScaledTanh()
-    test_ParametricSoftplus()
-    test_Scale()
-    test_LogSoftmax()
-    test_resnet()
-    test_inception()
-    test_densenet()
-    test_sign()
-    test_not()
-    test_and()
-    test_tile()
-    test_erf()
-    test_where()
-    test_or()
-    test_depth_to_space()
-    test_space_to_depth()
-    test_batch_norm()
-    test_batch_norm_dynamic_subgraph()
-    test_conv()
+    #test_flatten()
+    #test_reshape()
+    #test_shape()
+    #test_expand()
+    #test_power()
+    #test_squeeze()
+    #test_unsqueeze()
+    #test_slice()
+    #test_floor()
+    #test_ceil()
+    #test_round()
+    #test_isinf()
+    #test_isnan()
+    #test_clip()
+    #test_onehot()
+    #test_matmul()
+    #test_batch_matmul()
+    #test_gather()
+    #test_gather_nd()
+    #test_scatter()
+    #test_lrn()
+    #test_instance_norm()
+    #test_upsample()
+    #test_forward_min()
+    #test_forward_max()
+    #test_forward_mean()
+    #test_forward_hardsigmoid()
+    #test_forward_arg_min_max()
+    #test_softmax()
+    #test_constantofshape()
+    #test_all_reduce_funcs()
+    #test_pad()
+    #test_split()
+    #test_binary_ops()
+    #test_single_ops()
+    #test_leaky_relu()
+    #test_elu()
+    #test_selu()
+    #test_prelu()
+    #test_ThresholdedRelu()
+    #test_ScaledTanh()
+    #test_ParametricSoftplus()
+    #test_Scale()
+    #test_LogSoftmax()
+    #test_resnet()
+    #test_inception()
+    #test_densenet()
+    #test_sign()
+    #test_not()
+    #test_and()
+    #test_tile()
+    #test_erf()
+    #test_where()
+    #test_or()
+    #test_depth_to_space()
+    #test_space_to_depth()
+    #test_batch_norm()
+    #test_batch_norm_dynamic_subgraph()
+    #test_conv()
     test_convtranspose()
-    test_unsqueeze_constant()
-    test_pooling()
-    test_lppool()
-    test_lstm()
-    test_gru()
-    test_resize()
-    test_nonzero()
-    test_topk()
-    test_mod()
-    test_xor()
-    test_max_roi_pool()
-    test_roi_align()
+    #test_unsqueeze_constant()
+    #test_pooling()
+    #test_lppool()
+    #test_lstm()
+    #test_gru()
+    #test_resize()
+    #test_nonzero()
+    #test_topk()
+    #test_mod()
+    #test_xor()
+    #test_max_roi_pool()
+    #test_roi_align()
