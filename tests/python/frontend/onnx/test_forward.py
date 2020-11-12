@@ -1865,6 +1865,8 @@ def test_split():
     )
     # Split evenly (unstack)
     verify_split([1, 2, 3], [[1], [2], [3]], False, 0, False)
+    # Split a single value to a single value
+    verify_split([1], [[1]], [1], pass_split=True)
 
 
 @tvm.testing.uses_gpu
