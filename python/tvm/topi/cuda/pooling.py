@@ -117,18 +117,19 @@ def schedule_pool(outs, layout):
         num_thread = tvm.target.Target.current(allow_none=False).max_num_threads
         if Pool.op in s.outputs:
             Out = Pool
-            OL = s.cache_write(Pool, "local")
+        #    OL = s.cache_write(Pool, "local")
         else:
             Out = outs[0].op.output(0)
-            s[Pool].set_scope("local")
+            #s[Pool].set_scope("local")
+
         fused = s[Out].fuse(*s[Out].op.axis)
         bx, tx = s[Out].split(fused, factor=num_thread)
         s[Out].bind(bx, te.thread_axis("blockIdx.x"))
         s[Out].bind(tx, te.thread_axis("threadIdx.x"))
-        if Pool.op in s.outputs:
-            s[OL].compute_at(s[Out], tx)
-        else:
-            s[Pool].compute_at(s[Out], tx)
+        #if Pool.op in s.outputs:
+        #    s[Out].compute_at(s[Out], tx)
+        #else:
+        #    s[Pool].compute_at(s[Out], tx)
 
     scheduled_ops = []
 

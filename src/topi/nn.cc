@@ -97,7 +97,7 @@ TVM_REGISTER_GLOBAL("topi.nn.scale_shift_nhwc").set_body([](TVMArgs args, TVMRet
 /* Ops from nn/pooling.h */
 TVM_REGISTER_GLOBAL("topi.nn.pool").set_body([](TVMArgs args, TVMRetValue* rv) {
   *rv = nn::pool(args[0], args[1], args[2], args[3],
-                 static_cast<nn::PoolType>(static_cast<int>(args[4])), args[5], args[6], args[7]);
+                 static_cast<nn::PoolType>(static_cast<int>(args[4])), args[5], args[6], args[7], args[8]);
 });
 
 TVM_REGISTER_GLOBAL("topi.nn.pool_grad").set_body([](TVMArgs args, TVMRetValue* rv) {

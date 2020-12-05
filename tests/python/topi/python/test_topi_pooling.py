@@ -46,13 +46,14 @@ _pool_grad_schedule = {
 }
 
 
-def verify_pool(n, ic, ih, kh, sh, padding, pool_type, ceil_mode, count_include_pad=True):
+def verify_pool(n, ic, ih, kh, sh, padding, pool_type, ceil_mode, count_include_pad=True, return_indices=False):
     """verify function of pool"""
     iw = ih
     kw = kh
     sw = sh
     pt, pl, pb, pr = padding
     layout = "NCHW"
+    index = 1 if return_indices else 0
     A = te.placeholder((n, ic, ih, iw), name="A")
     B = topi.nn.pool(
         A,
@@ -63,7 +64,8 @@ def verify_pool(n, ic, ih, kh, sh, padding, pool_type, ceil_mode, count_include_
         ceil_mode=ceil_mode,
         layout="NCHW",
         count_include_pad=count_include_pad,
-    )[0]
+        return_indices=return_indices
+    )[index]
     B = topi.nn.relu(B)
     dtype = A.dtype
 
@@ -114,11 +116,14 @@ def verify_pool(n, ic, ih, kh, sh, padding, pool_type, ceil_mode, count_include_
 
         a = tvm.nd.array(a_np, ctx)
         b = tvm.nd.array(np.zeros(get_const_tuple(B.shape), dtype=dtype), ctx)
+        print(tvm.lower(s, [A, B], device))
+        return
         f = tvm.build(s, [A, B], device)
+        print(f.imported_modules[0].get_source())
         f(a, b)
         tvm.testing.assert_allclose(b.asnumpy(), b_np, rtol=2e-5, atol=1e-5)
 
-    for device, ctx in tvm.testing.enabled_targets():
+    for device, ctx in [('cuda', tvm.gpu())]:#tvm.testing.enabled_targets():
         check_device(device, ctx)
 
 
@@ -201,6 +206,9 @@ def verify_pool_grad(
 @tvm.testing.uses_gpu
 def test_pool():
     """test cases of pool"""
+    verify_pool(1, 256, 32, 2, 2, [0, 0, 0, 0], "max", False, return_indices=False)
+    verify_pool(1, 256, 32, 2, 2, [0, 0, 0, 0], "max", False, return_indices=True)
+    exit()
     verify_pool(1, 256, 32, 2, 2, [0, 0, 0, 0], "avg", False, True)
     verify_pool(1, 256, 31, 3, 3, [1, 2, 1, 2], "avg", False, True)
     verify_pool(1, 256, 32, 2, 2, [1, 2, 1, 2], "avg", False, False)

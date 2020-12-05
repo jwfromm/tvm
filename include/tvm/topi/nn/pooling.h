@@ -122,9 +122,8 @@ inline Array<Tensor> pool_impl(const Tensor& x, const Array<PrimExpr>& kernel_si
 
   if (pool_type == kMaxPool) {
     auto temp = do_pad ? pad(x, pad_before, pad_after, tvm::min_value(x->dtype), "pad_temp") : x;
-    auto argmax = MakeArgmaxReducer();
-    
     if (return_indices) {
+      auto argmax = MakeArgmaxReducer();
       // Create index list for argmax
       Array<PrimExpr> data_shape = x->shape;
       for (size_t i = 0; i < data_shape.size(); ++i) {
