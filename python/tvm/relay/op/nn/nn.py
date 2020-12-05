@@ -757,6 +757,10 @@ def max_pool1d(data, pool_size=(1,), strides=(1,), padding=(0,), layout="NCW", c
 
     ceil_mode : bool, optional
         To enable or disable ceil while pooling.
+    
+    return_indices : bool, optional
+        If set, returns the pair (idx, values) where idx indicates
+        which value in each windows was maximum.
 
     Returns
     -------
@@ -768,11 +772,11 @@ def max_pool1d(data, pool_size=(1,), strides=(1,), padding=(0,), layout="NCW", c
     if isinstance(strides, int):
         strides = (strides,)
     padding = get_pad_tuple1d(padding)
-    return _make.max_pool1d(data, pool_size, strides, padding, layout, ceil_mode)
+    return _make.max_pool1d(data, pool_size, strides, padding, layout, ceil_mode, return_indices)
 
 
 def max_pool2d(
-    data, pool_size=(1, 1), strides=(1, 1), padding=(0, 0), layout="NCHW", ceil_mode=False
+    data, pool_size=(1, 1), strides=(1, 1), padding=(0, 0), layout="NCHW", ceil_mode=False, return_indices=False
 ):
     r"""2D maximum pooling operator.
 
@@ -815,6 +819,10 @@ def max_pool2d(
     ceil_mode : bool, optional
         To enable or disable ceil while pooling.
 
+    return_indices : bool, optional
+        If set, returns the pair (idx, values) where idx indicates
+        which value in each windows was maximum.
+
     Returns
     -------
     result : tvm.relay.Expr
@@ -825,11 +833,11 @@ def max_pool2d(
     if isinstance(strides, int):
         strides = (strides, strides)
     padding = get_pad_tuple2d(padding)
-    return _make.max_pool2d(data, pool_size, strides, padding, layout, ceil_mode)
+    return _make.max_pool2d(data, pool_size, strides, padding, layout, ceil_mode, return_indices)
 
 
 def max_pool3d(
-    data, pool_size=(1, 1, 1), strides=(1, 1, 1), padding=(0, 0, 0), layout="NCDHW", ceil_mode=False
+    data, pool_size=(1, 1, 1), strides=(1, 1, 1), padding=(0, 0, 0), layout="NCDHW", ceil_mode=False, return_indices=False
 ):
     r"""3D maximum pooling operator.
 
@@ -864,6 +872,10 @@ def max_pool3d(
 
     ceil_mode : bool, optional
         To enable or disable ceil while pooling.
+    
+    return_indices : bool, optional
+        If set, returns the pair (idx, values) where idx indicates
+        which value in each windows was maximum.
 
     Returns
     -------
@@ -875,7 +887,7 @@ def max_pool3d(
     if isinstance(strides, int):
         strides = (strides, strides, strides)
     padding = get_pad_tuple3d(padding)
-    return _make.max_pool3d(data, pool_size, strides, padding, layout, ceil_mode)
+    return _make.max_pool3d(data, pool_size, strides, padding, layout, ceil_mode, return_indices)
 
 
 def avg_pool1d(
@@ -933,7 +945,7 @@ def avg_pool1d(
     if isinstance(strides, int):
         strides = (strides,)
     padding = get_pad_tuple1d(padding)
-    return _make.avg_pool1d(data, pool_size, strides, padding, layout, ceil_mode, count_include_pad)
+    return _make.avg_pool1d(data, pool_size, strides, padding, layout, ceil_mode, count_include_pad, False)
 
 
 def avg_pool2d(
@@ -1000,7 +1012,7 @@ def avg_pool2d(
     if isinstance(strides, int):
         strides = (strides, strides)
     padding = get_pad_tuple2d(padding)
-    return _make.avg_pool2d(data, pool_size, strides, padding, layout, ceil_mode, count_include_pad)
+    return _make.avg_pool2d(data, pool_size, strides, padding, layout, ceil_mode, count_include_pad, False)
 
 
 def avg_pool3d(
@@ -1059,7 +1071,7 @@ def avg_pool3d(
     if isinstance(strides, int):
         strides = (strides, strides, strides)
     padding = get_pad_tuple3d(padding)
-    return _make.avg_pool3d(data, pool_size, strides, padding, layout, ceil_mode, count_include_pad)
+    return _make.avg_pool3d(data, pool_size, strides, padding, layout, ceil_mode, count_include_pad, False)
 
 
 def max_pool2d_grad(
