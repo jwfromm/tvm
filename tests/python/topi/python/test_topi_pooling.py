@@ -63,7 +63,7 @@ def verify_pool(n, ic, ih, kh, sh, padding, pool_type, ceil_mode, count_include_
         ceil_mode=ceil_mode,
         layout="NCHW",
         count_include_pad=count_include_pad,
-    )
+    )[0]
     B = topi.nn.relu(B)
     dtype = A.dtype
 
@@ -140,7 +140,7 @@ def verify_pool_grad(
         ceil_mode=ceil_mode,
         layout="NCHW",
         count_include_pad=count_include_pad,
-    )
+    )[0]
     dtype = A.dtype
 
     bshape = get_const_tuple(B.shape)

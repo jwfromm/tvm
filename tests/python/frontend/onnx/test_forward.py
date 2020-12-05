@@ -78,6 +78,8 @@ def get_tvm_output(
     with tvm.transform.PassContext(opt_level=1):
         graph, lib, params = relay.build(mod, target, params=params)
 
+    print(graph)
+
     ctx = tvm.cpu(0)
     m = graph_runtime.create(graph, lib, ctx)
     # set inputs
@@ -2820,7 +2822,7 @@ def test_unsqueeze_constant():
         relay.frontend.from_onnx(onnx_model, {"0": input_size})
 
 
-def verify_pooling(x_shape, kernel_shape, strides, pads, out_shape, mode, auto_pad="NOTSET"):
+def verify_pooling(x_shape, kernel_shape, strides, pads, out_shape, mode, auto_pad="NOTSET", return_indices=False):
     print(x_shape, kernel_shape, strides, mode, pads, auto_pad)
     x_np = np.random.uniform(size=x_shape).astype("float32")
 
@@ -2831,8 +2833,17 @@ def verify_pooling(x_shape, kernel_shape, strides, pads, out_shape, mode, auto_p
     else:
         raise ValueError("Pool method {} is not supported.".format(mode))
 
+    outputs = ["y"]
+    output_info = [helper.make_tensor_value_info("y", TensorProto.FLOAT, list(out_shape))]
+    if return_indices:
+        outputs.append("indices")
+        indices_node = helper.make_tensor_value_info("indices", TensorProto.INT64, list(out_shape))
+        output_info.append(indices_node)
+        out_shape = [out_shape, out_shape]
+
+
     pool_node = helper.make_node(
-        node_type, inputs=["x"], outputs=["y"], kernel_shape=kernel_shape, strides=strides
+        node_type, inputs=["x"], outputs=outputs, kernel_shape=kernel_shape, strides=strides
     )
 
     if pads is None:
@@ -2849,15 +2860,26 @@ def verify_pooling(x_shape, kernel_shape, strides, pads, out_shape, mode, auto_p
         [pool_node],
         "pooling_test",
         inputs=[helper.make_tensor_value_info("x", TensorProto.FLOAT, list(x_shape))],
-        outputs=[helper.make_tensor_value_info("y", TensorProto.FLOAT, list(out_shape))],
+        outputs=output_info
     )
 
     model = helper.make_model(graph, producer_name="pooling_test")
-    verify_with_ort(model, [x_shape], out_shape, use_vm=True, convert_to_static=True)
+    verify_with_ort(model, [x_shape], out_shape, use_vm=False, convert_to_static=True)
 
 
 @tvm.testing.uses_gpu
 def test_pooling():
+    # Pool2D
+    verify_pooling(
+        x_shape=[1, 1, 32, 32],
+        kernel_shape=[3, 3],
+        strides=[1, 1],
+        pads=[1, 1, 1, 1],
+        out_shape=[1, 1, 32, 32],
+        mode='max',
+        return_indices=True
+    )
+    exit()
     for mode in ["max", "average"]:
         # Pool1D
         verify_pooling(
@@ -3916,79 +3938,79 @@ def test_size():
 
 
 if __name__ == "__main__":
-    test_flatten()
-    test_reshape()
-    test_shape()
-    test_expand()
-    test_power()
-    test_squeeze()
-    test_unsqueeze()
-    test_slice()
-    test_floor()
-    test_ceil()
-    test_round()
-    test_isinf()
-    test_isnan()
-    test_clip()
-    test_clip_min_max_as_inputs()
-    test_onehot()
-    test_matmul()
-    test_gather()
-    test_gatherelements()
-    test_gather_nd()
-    test_scatter()
-    test_lrn()
-    test_instance_norm()
-    test_upsample()
-    test_forward_min()
-    test_forward_max()
-    test_forward_mean()
-    test_forward_hardsigmoid()
-    test_forward_arg_min_max()
-    test_softmax()
-    test_constantofshape()
-    test_all_reduce_funcs()
-    test_pad()
-    test_split()
-    test_binary_ops()
-    test_single_ops()
-    test_leaky_relu()
-    test_elu()
-    test_selu()
-    test_prelu()
-    test_ThresholdedRelu()
-    test_ScaledTanh()
-    test_ParametricSoftplus()
-    test_Scale()
-    test_LogSoftmax()
-    test_resnet()
-    test_inception()
-    test_densenet()
-    test_sign()
-    test_not()
-    test_and()
-    test_tile()
-    test_erf()
-    test_where()
-    test_or()
-    test_depth_to_space()
-    test_space_to_depth()
-    test_batch_norm()
-    test_batch_norm_dynamic_subgraph()
-    test_conv()
-    test_convtranspose()
-    test_unsqueeze_constant()
+    #test_flatten()
+    #test_reshape()
+    #test_shape()
+    #test_expand()
+    #test_power()
+    #test_squeeze()
+    #test_unsqueeze()
+    #test_slice()
+    #test_floor()
+    #test_ceil()
+    #test_round()
+    #test_isinf()
+    #test_isnan()
+    #test_clip()
+    #test_clip_min_max_as_inputs()
+    #test_onehot()
+    #test_matmul()
+    #test_gather()
+    #test_gatherelements()
+    #test_gather_nd()
+    #test_scatter()
+    #test_lrn()
+    #test_instance_norm()
+    #test_upsample()
+    #test_forward_min()
+    #test_forward_max()
+    #test_forward_mean()
+    #test_forward_hardsigmoid()
+    #test_forward_arg_min_max()
+    #test_softmax()
+    #test_constantofshape()
+    #test_all_reduce_funcs()
+    #test_pad()
+    #test_split()
+    #test_binary_ops()
+    #test_single_ops()
+    #test_leaky_relu()
+    #test_elu()
+    #test_selu()
+    #test_prelu()
+    #test_ThresholdedRelu()
+    #test_ScaledTanh()
+    #test_ParametricSoftplus()
+    #test_Scale()
+    #test_LogSoftmax()
+    #test_resnet()
+    #test_inception()
+    #test_densenet()
+    #test_sign()
+    #test_not()
+    #test_and()
+    #test_tile()
+    #test_erf()
+    #test_where()
+    #test_or()
+    #test_depth_to_space()
+    #test_space_to_depth()
+    #test_batch_norm()
+    #test_batch_norm_dynamic_subgraph()
+    #test_conv()
+    #test_convtranspose()
+    #test_unsqueeze_constant()
     test_pooling()
-    test_lppool()
-    test_lstm()
-    test_gru()
-    test_resize()
-    test_nonzero()
-    test_topk()
-    test_mod()
-    test_xor()
-    test_max_roi_pool()
-    test_roi_align()
-    test_range()
-    test_loop()
-    test_size()
+    #test_lppool()
+    #test_lstm()
+    #test_gru()
+    #test_resize()
+    #test_nonzero()
+    #test_topk()
+    #test_mod()
+    #test_xor()
+    #test_max_roi_pool()
+    #test_roi_align()
+    #test_range()
+    #test_loop()
+    #test_size()

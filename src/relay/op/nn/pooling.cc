@@ -122,9 +122,7 @@ bool Pool2DRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
   }
 
   // assign output type.
-  bool return_indices = param->return_indices;
-  // For now only maxpool supports returning indices.
-  if (return_indices && (typeid(param) == typeid(MaxPool2DAttrs))) {
+  if (param->return_indices) {
     reporter->Assign(types[1], TupleType({TensorType(oshape, data->dtype), TensorType(oshape, data->dtype)}));
   } else {
     reporter->Assign(types[1], TensorType(oshape, data->dtype));
@@ -142,6 +140,7 @@ Array<te::Tensor> Pool2DCompute(const Attrs& attrs, const Array<te::Tensor>& inp
   auto strides = param->strides;
   auto padding = param->padding;
   auto ceil_mode = param->ceil_mode;
+  auto return_indices = param->return_indices;
   Layout layout(param->layout);
 
   ICHECK(tir::BijectiveLayout(layout, kNCHW).defined())
@@ -166,14 +165,10 @@ Array<te::Tensor> Pool2DCompute(const Attrs& attrs, const Array<te::Tensor>& inp
   }
   if (mode == topi::nn::kAvgPool) {
     bool count_include_pad = reinterpret_cast<const AvgPool2DAttrs*>(param)->count_include_pad;
-    Array<te::Tensor> result = topi::nn::pool(inputs[0], pool_size, strides, padding, mode, ceil_mode,
+    return topi::nn::pool(inputs[0], pool_size, strides, padding, mode, ceil_mode,
                                             layout.name(), count_include_pad);
-    int n = result.size();
-    return {result[n - 1]};
   } else {
-    Array<te::Tensor> result = topi::nn::pool(inputs[0], pool_size, strides, padding, mode, ceil_mode, layout.name());
-    int n = result.size();
-    return {result[n - 1]};
+    return topi::nn::pool(inputs[0], pool_size, strides, padding, mode, ceil_mode, layout.name(), return_indices=return_indices);
   }
 }
 

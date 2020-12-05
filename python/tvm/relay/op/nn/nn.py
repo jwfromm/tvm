@@ -21,7 +21,7 @@ from tvm.relay import expr
 from . import _make
 from ..dyn.nn import _make as _dyn_make
 from .utils import get_pad_tuple1d, get_pad_tuple2d, get_pad_tuple3d
-from ...expr import const, Expr
+from ...expr import const, Expr, TupleWrapper
 
 
 def conv1d(
@@ -833,7 +833,10 @@ def max_pool2d(
     if isinstance(strides, int):
         strides = (strides, strides)
     padding = get_pad_tuple2d(padding)
-    return _make.max_pool2d(data, pool_size, strides, padding, layout, ceil_mode, return_indices)
+    output = _make.max_pool2d(data, pool_size, strides, padding, layout, ceil_mode, return_indices)
+    if return_indices:
+        return TupleWrapper(output, 2)
+    return output
 
 
 def max_pool3d(

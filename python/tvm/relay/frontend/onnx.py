@@ -300,12 +300,26 @@ class Pool(OnnxOpConverter):
         else:
             attr["layout"] = onnx_default_layout(dims=(len(input_shape) - 2))
 
-        return AttrCvt(
+        # Check if indices should be returned.
+        num_outputs = attr['tvm_custom']['num_outputs']
+        if num_outputs == 2 and cls.name == "max_pool":
+            attr['return_indices'] = True
+        elif num_outputs == 2:
+            raise tvm.error.OpAttributeInvalid("Only maxpool currently supports outputting index.")
+
+        output = AttrCvt(
             op_name=dimension_picker(cls.name),
             transforms={"kernel_shape": "pool_size", "pads": ("padding", 0)},
             ignores=["dilations", "storage_order"],
             custom_check=dimension_constraint(),
         )([data], attr, params)
+
+        # Unpack output and package as tuple if needed.
+        if num_outputs == 2:
+            index, value = output
+            return _expr.TupleWrapper(_expr.Tuple((value, index)), 2)
+        # Otherwise we can return.
+        return output
 
 
 class Absolute(Unary):

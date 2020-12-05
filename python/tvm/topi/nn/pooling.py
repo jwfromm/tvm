@@ -236,7 +236,7 @@ def adaptive_pool3d(data, output_size, pool_type, layout="NCDHW"):
 
 
 def pool1d(
-    data, kernel, stride, padding, pool_type, ceil_mode=False, layout="NCW", count_include_pad=True, return_indices=False,
+    data, kernel, stride, padding, pool_type, ceil_mode=False, layout="NCW", count_include_pad=True,
 ):
     """Perform pooling on width dimension of data.
        Width axis is determined according to the layout string.
@@ -300,7 +300,6 @@ def pool1d(
         ceil_mode,
         layout,
         count_include_pad,
-        return_indices,
     )
 
 
@@ -313,7 +312,6 @@ def pool3d(
     ceil_mode=False,
     layout="NCDHW",
     count_include_pad=True,
-    return_indices=False,
 ):
     """Perform pooling on depth, height and width dimension of data.
        It decides the depth, height and width dimension according to the layout string,
@@ -369,5 +367,4 @@ def pool3d(
         ceil_mode,
         layout,
         count_include_pad,
-        return_indices=False,
     )
