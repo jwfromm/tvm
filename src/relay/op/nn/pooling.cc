@@ -121,8 +121,14 @@ bool Pool2DRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
     }
   }
 
-  // assign output type
-  reporter->Assign(types[1], TensorType(oshape, data->dtype));
+  // assign output type.
+  bool return_indices = param->return_indices;
+  // For now only maxpool supports returning indices.
+  if (return_indices && (typeid(param) == typeid(MaxPool2DAttrs))) {
+    reporter->Assign(types[1], TupleType({TensorType(oshape, data->dtype), TensorType(oshape, data->dtype)}));
+  } else {
+    reporter->Assign(types[1], TensorType(oshape, data->dtype));
+  }
   return true;
 }
 
@@ -160,18 +166,21 @@ Array<te::Tensor> Pool2DCompute(const Attrs& attrs, const Array<te::Tensor>& inp
   }
   if (mode == topi::nn::kAvgPool) {
     bool count_include_pad = reinterpret_cast<const AvgPool2DAttrs*>(param)->count_include_pad;
-    return Array<te::Tensor>{topi::nn::pool(inputs[0], pool_size, strides, padding, mode, ceil_mode,
-                                            layout.name(), count_include_pad)};
+    Array<te::Tensor> result = topi::nn::pool(inputs[0], pool_size, strides, padding, mode, ceil_mode,
+                                            layout.name(), count_include_pad);
+    int n = result.size();
+    return {result[n - 1]};
   } else {
-    return Array<te::Tensor>{
-        topi::nn::pool(inputs[0], pool_size, strides, padding, mode, ceil_mode, layout.name())};
+    Array<te::Tensor> result = topi::nn::pool(inputs[0], pool_size, strides, padding, mode, ceil_mode, layout.name());
+    int n = result.size();
+    return {result[n - 1]};
   }
 }
 
 TVM_REGISTER_GLOBAL("relay.op.nn._make.max_pool2d")
     .set_body_typed([](Expr data, Array<IndexExpr> pool_size, Array<IndexExpr> strides,
-                       Array<IndexExpr> padding, String layout, bool ceil_mode) {
-      return MakeMaxPool<MaxPool2DAttrs>(data, pool_size, strides, padding, layout, ceil_mode,
+                       Array<IndexExpr> padding, String layout, bool ceil_mode, bool return_indices) {
+      return MakeMaxPool<MaxPool2DAttrs>(data, pool_size, strides, padding, layout, ceil_mode, return_indices,
                                          "nn.max_pool2d");
     });
 
@@ -208,9 +217,9 @@ RELAY_REGISTER_OP("nn.max_pool2d")
 TVM_REGISTER_GLOBAL("relay.op.nn._make.avg_pool2d")
     .set_body_typed([](Expr data, Array<IndexExpr> pool_size, Array<IndexExpr> strides,
                        Array<IndexExpr> padding, String layout, bool ceil_mode,
-                       bool count_include_pad) {
+                       bool count_include_pad, bool return_indices) {
       return MakeAvgPool<AvgPool2DAttrs>(data, pool_size, strides, padding, layout, ceil_mode,
-                                         count_include_pad, "nn.avg_pool2d");
+                                         count_include_pad, return_indices, "nn.avg_pool2d");
     });
 
 RELAY_REGISTER_OP("nn.avg_pool2d")
@@ -863,8 +872,14 @@ bool Pool1DRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
     }
   }
 
-  // assign output type
-  reporter->Assign(types[1], TensorType(oshape, data->dtype));
+  // assign output type.
+  bool return_indices = param->return_indices;
+  // For now only maxpool supports returning indices.
+  if (return_indices && (typeid(param) == typeid(MaxPool1DAttrs))) {
+    reporter->Assign(types[1], TupleType({TensorType(oshape, data->dtype), TensorType(oshape, data->dtype)}));
+  } else {
+    reporter->Assign(types[1], TensorType(oshape, data->dtype));
+  }
   return true;
 }
 
@@ -906,8 +921,8 @@ Array<te::Tensor> Pool1DCompute(const Attrs& attrs, const Array<te::Tensor>& inp
 
 TVM_REGISTER_GLOBAL("relay.op.nn._make.max_pool1d")
     .set_body_typed([](Expr data, Array<IndexExpr> pool_size, Array<IndexExpr> strides,
-                       Array<IndexExpr> padding, String layout, bool ceil_mode) {
-      return MakeMaxPool<MaxPool1DAttrs>(data, pool_size, strides, padding, layout, ceil_mode,
+                       Array<IndexExpr> padding, String layout, bool ceil_mode, bool return_indices) {
+      return MakeMaxPool<MaxPool1DAttrs>(data, pool_size, strides, padding, layout, ceil_mode, return_indices,
                                          "nn.max_pool1d");
     });
 
@@ -942,9 +957,9 @@ RELAY_REGISTER_OP("nn.max_pool1d")
 TVM_REGISTER_GLOBAL("relay.op.nn._make.avg_pool1d")
     .set_body_typed([](Expr data, Array<IndexExpr> pool_size, Array<IndexExpr> strides,
                        Array<IndexExpr> padding, String layout, bool ceil_mode,
-                       bool count_include_pad) {
+                       bool count_include_pad, bool return_indices) {
       return MakeAvgPool<AvgPool1DAttrs>(data, pool_size, strides, padding, layout, ceil_mode,
-                                         count_include_pad, "nn.avg_pool1d");
+                                         count_include_pad, return_indices, "nn.avg_pool1d");
     });
 
 RELAY_REGISTER_OP("nn.avg_pool1d")
@@ -1041,8 +1056,14 @@ bool Pool3DRel(const Array<Type>& types, int num_inputs, const Attrs& attrs,
     }
   }
 
-  // assign output type
-  reporter->Assign(types[1], TensorType(oshape, data->dtype));
+  // assign output type.
+  bool return_indices = param->return_indices;
+  // For now only maxpool supports returning indices.
+  if (return_indices && (typeid(param) == typeid(MaxPool3DAttrs))) {
+    reporter->Assign(types[1], TupleType({TensorType(oshape, data->dtype), TensorType(oshape, data->dtype)}));
+  } else {
+    reporter->Assign(types[1], TensorType(oshape, data->dtype));
+  }
   return true;
 }
 
@@ -1093,8 +1114,8 @@ Array<te::Tensor> Pool3DCompute(const Attrs& attrs, const Array<te::Tensor>& inp
 
 TVM_REGISTER_GLOBAL("relay.op.nn._make.max_pool3d")
     .set_body_typed([](Expr data, Array<IndexExpr> pool_size, Array<IndexExpr> strides,
-                       Array<IndexExpr> padding, String layout, bool ceil_mode) {
-      return MakeMaxPool<MaxPool3DAttrs>(data, pool_size, strides, padding, layout, ceil_mode,
+                       Array<IndexExpr> padding, String layout, bool ceil_mode, bool return_indices) {
+      return MakeMaxPool<MaxPool3DAttrs>(data, pool_size, strides, padding, layout, ceil_mode, return_indices,
                                          "nn.max_pool3d");
     });
 
@@ -1132,9 +1153,9 @@ RELAY_REGISTER_OP("nn.max_pool3d")
 TVM_REGISTER_GLOBAL("relay.op.nn._make.avg_pool3d")
     .set_body_typed([](Expr data, Array<IndexExpr> pool_size, Array<IndexExpr> strides,
                        Array<IndexExpr> padding, String layout, bool ceil_mode,
-                       bool count_include_pad) {
+                       bool count_include_pad, bool return_indices) {
       return MakeAvgPool<AvgPool3DAttrs>(data, pool_size, strides, padding, layout, ceil_mode,
-                                         count_include_pad, "nn.avg_pool3d");
+                                         count_include_pad, return_indices, "nn.avg_pool3d");
     });
 
 RELAY_REGISTER_OP("nn.avg_pool3d")

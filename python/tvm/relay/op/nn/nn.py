@@ -724,7 +724,7 @@ def log_softmax(data, axis=-1):
     return _make.log_softmax(data, axis)
 
 
-def max_pool1d(data, pool_size=(1,), strides=(1,), padding=(0,), layout="NCW", ceil_mode=False):
+def max_pool1d(data, pool_size=(1,), strides=(1,), padding=(0,), layout="NCW", ceil_mode=False, return_indices=False):
     r"""1D maximum pooling operator.
 
     This operator takes data as input and does 1D max value calculation

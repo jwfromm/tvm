@@ -686,6 +686,7 @@ struct MaxPool2DAttrs : public tvm::AttrsNode<MaxPool2DAttrs> {
   Array<IndexExpr> padding;
   tvm::String layout;
   bool ceil_mode;
+  bool return_indices;
 
   TVM_DECLARE_ATTRS(MaxPool2DAttrs, "relay.attrs.MaxPool2DAttrs") {
     TVM_ATTR_FIELD(pool_size).describe("Size of the pooling windows.");
@@ -707,6 +708,9 @@ struct MaxPool2DAttrs : public tvm::AttrsNode<MaxPool2DAttrs> {
         "'W' dimensions.");
     TVM_ATTR_FIELD(ceil_mode).set_default(false).describe(
         "When true, will use ceil instead of floor to compute the output shape.");
+    TVM_ATTR_FIELD(return_indices).set_default(false).describe(
+        "When true, return both the maxpool output, and the indices used to select"
+        "that output. The result will be return in the order (idx, value).");
   }
 };
 
@@ -718,6 +722,7 @@ struct AvgPool2DAttrs : public tvm::AttrsNode<AvgPool2DAttrs> {
   std::string layout;
   bool ceil_mode;
   bool count_include_pad;
+  bool return_indices;
 
   TVM_DECLARE_ATTRS(AvgPool2DAttrs, "relay.attrs.AvgPool2DAttrs") {
     TVM_ATTR_FIELD(pool_size).describe("Size of the pooling windows.");
@@ -742,6 +747,10 @@ struct AvgPool2DAttrs : public tvm::AttrsNode<AvgPool2DAttrs> {
     TVM_ATTR_FIELD(count_include_pad)
         .set_default(false)
         .describe("When true, will include padding to compute the average");
+    TVM_ATTR_FIELD(return_indices).set_default(false).describe(
+        "When true, return both the maxpool output, and the indices used to select"
+        "that output. The result will be return in the order (idx, value). Not"
+        "currently used for averaged pooling.");
   }
 };
 
@@ -798,6 +807,7 @@ struct MaxPool1DAttrs : public tvm::AttrsNode<MaxPool1DAttrs> {
   Array<IndexExpr> padding;
   std::string layout;
   bool ceil_mode;
+  bool return_indices;
 
   TVM_DECLARE_ATTRS(MaxPool1DAttrs, "relay.attrs.MaxPool1DAttrs") {
     TVM_ATTR_FIELD(pool_size).describe("Size of the pooling windows.");
@@ -818,6 +828,9 @@ struct MaxPool1DAttrs : public tvm::AttrsNode<MaxPool1DAttrs> {
         "dimensions respectively. Pooling is applied on the 'W' dimensions.");
     TVM_ATTR_FIELD(ceil_mode).set_default(false).describe(
         "When true, will use ceil instead of floor to compute the output shape.");
+    TVM_ATTR_FIELD(return_indices).set_default(false).describe(
+        "When true, return both the maxpool output, and the indices used to select"
+        "that output. The result will be return in the order (idx, value).");
   }
 };
 
@@ -829,6 +842,7 @@ struct AvgPool1DAttrs : public tvm::AttrsNode<AvgPool1DAttrs> {
   std::string layout;
   bool ceil_mode;
   bool count_include_pad;
+  bool return_indices;
 
   TVM_DECLARE_ATTRS(AvgPool1DAttrs, "relay.attrs.AvgPool1DAttrs") {
     TVM_ATTR_FIELD(pool_size).describe("Size of the pooling windows.");
@@ -852,6 +866,10 @@ struct AvgPool1DAttrs : public tvm::AttrsNode<AvgPool1DAttrs> {
     TVM_ATTR_FIELD(count_include_pad)
         .set_default(false)
         .describe("When true, will include padding to compute the average");
+    TVM_ATTR_FIELD(return_indices).set_default(false).describe(
+        "When true, return both the maxpool output, and the indices used to select"
+        "that output. The result will be return in the order (idx, value). Not"
+        "currently used for averaged pooling.");
   }
 };
 
@@ -862,6 +880,7 @@ struct MaxPool3DAttrs : public tvm::AttrsNode<MaxPool3DAttrs> {
   Array<IndexExpr> padding;
   std::string layout;
   bool ceil_mode;
+  bool return_indices;
 
   TVM_DECLARE_ATTRS(MaxPool3DAttrs, "relay.attrs.MaxPool3DAttrs") {
     TVM_ATTR_FIELD(pool_size).describe("Size of the pooling windows.");
@@ -883,6 +902,9 @@ struct MaxPool3DAttrs : public tvm::AttrsNode<MaxPool3DAttrs> {
         "'W' dimensions.");
     TVM_ATTR_FIELD(ceil_mode).set_default(false).describe(
         "When true, will use ceil instead of floor to compute the output shape.");
+    TVM_ATTR_FIELD(return_indices).set_default(false).describe(
+        "When true, return both the maxpool output, and the indices used to select"
+        "that output. The result will be return in the order (idx, value).");
   }
 };
 
@@ -894,6 +916,7 @@ struct AvgPool3DAttrs : public tvm::AttrsNode<AvgPool3DAttrs> {
   std::string layout;
   bool ceil_mode;
   bool count_include_pad;
+  bool return_indices;
 
   TVM_DECLARE_ATTRS(AvgPool3DAttrs, "relay.attrs.AvgPool3DAttrs") {
     TVM_ATTR_FIELD(pool_size).describe("Size of the pooling windows.");
@@ -918,6 +941,10 @@ struct AvgPool3DAttrs : public tvm::AttrsNode<AvgPool3DAttrs> {
     TVM_ATTR_FIELD(count_include_pad)
         .set_default(false)
         .describe("When true, will include padding to compute the average");
+    TVM_ATTR_FIELD(return_indices).set_default(false).describe(
+        "When true, return both the maxpool output, and the indices used to select"
+        "that output. The result will be return in the order (idx, value). Not"
+        "currently used for averaged pooling.");
   }
 };
 

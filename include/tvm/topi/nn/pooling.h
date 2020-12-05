@@ -61,10 +61,10 @@ enum PoolType : int {
  *
  * \return The output tensor in same layout order
  */
-inline Tensor pool_impl(const Tensor& x, const Array<PrimExpr>& kernel_size,
+inline Array<Tensor> pool_impl(const Tensor& x, const Array<PrimExpr>& kernel_size,
                         const Array<PrimExpr>& stride_size, const Array<PrimExpr>& padding_size,
                         PoolType pool_type, bool ceil_mode, const size_t height_axis,
-                        const size_t width_axis, bool count_include_pad) {
+                        const size_t width_axis, bool count_include_pad, bool return_indices) {
   ICHECK(x->shape.size() >= 2) << "Pooling input must >= 2-D (H, W)";
   ICHECK_EQ(kernel_size.size(), 2) << "Pooling kernel_size must have 2 elements";
   ICHECK_EQ(stride_size.size(), 2) << "Pooling stride_size must have 2 elements";
@@ -122,16 +122,41 @@ inline Tensor pool_impl(const Tensor& x, const Array<PrimExpr>& kernel_size,
 
   if (pool_type == kMaxPool) {
     auto temp = do_pad ? pad(x, pad_before, pad_after, tvm::min_value(x->dtype), "pad_temp") : x;
-    return tvm::te::compute(
-        out_shape,
-        [&](const Array<Var>& output) {
-          Array<PrimExpr> indices;
-          for (const Var& var : output) indices.push_back(var);
-          indices.Set(height_axis, output[height_axis] * stride_height + dheight);
-          indices.Set(width_axis, output[width_axis] * stride_width + dwidth);
-          return tvm::max(temp(indices), {dheight, dwidth});
-        },
-        "tensor", "pool_max");
+    auto argmax = MakeArgmaxReducer();
+    
+    if (return_indices) {
+      // Create index list for argmax
+      Array<PrimExpr> data_shape = x->shape;
+      for (size_t i = 0; i < data_shape.size(); ++i) {
+        data_shape.Set(i, cast(DataType::DataType::Int(32), data_shape[i]));
+      }
+      Array<PrimExpr> ravel_shape{data_shape.begin(), data_shape.end()};
+      ravel_shape.Set(height_axis, ravel_shape[height_axis] + pad_top + pad_bottom);
+      ravel_shape.Set(width_axis, ravel_shape[width_axis] + pad_left + pad_right);
+
+      return tvm::te::compute(
+          out_shape,
+          [&](const Array<Var>& inds) {
+            Array<PrimExpr> window_inds{inds.begin(), inds.end()};
+            window_inds.Set(height_axis, inds[height_axis] * stride_height + dheight);
+            window_inds.Set(width_axis, inds[width_axis] * stride_width + dwidth);
+            auto idx = detail::RavelIndex(window_inds, ravel_shape);
+            return argmax({idx, temp(window_inds)}, {dheight, dwidth}, nullptr);
+          },
+          "tensor", "pool_max");
+    } else {
+      auto mp_out = tvm::te::compute(
+          out_shape,
+          [&](const Array<Var>& output) {
+            Array<PrimExpr> indices;
+            for (const Var& var : output) indices.push_back(var);
+            indices.Set(height_axis, output[height_axis] * stride_height + dheight);
+            indices.Set(width_axis, output[width_axis] * stride_width + dwidth);
+            return tvm::max(temp(indices), {dheight, dwidth});
+          },
+          "tensor", "pool_max");
+      return {mp_out};
+    }
   } else if (pool_type == kAvgPool) {
     // Pad the inputs
     auto temp = do_pad ? pad(x, pad_before, pad_after, 0, "pad_temp") : x;
@@ -149,7 +174,7 @@ inline Tensor pool_impl(const Tensor& x, const Array<PrimExpr>& kernel_size,
         "tensor", "pool_sum");
 
     // TVM compute for dividing the reduced window sum by kernel size.
-    return tvm::te::compute(
+    auto avg_out = tvm::te::compute(
         out_shape,
         [&](const Array<Var>& output) {
           Array<PrimExpr> indices;
@@ -170,9 +195,10 @@ inline Tensor pool_impl(const Tensor& x, const Array<PrimExpr>& kernel_size,
           }
         },
         "tensor", kElementWise);
+    return {avg_out};
   } else {
     LOG(ERROR) << "Unrecognized pool_type: " << pool_type;
-    return x;
+    return {x};
   }
 }
 
@@ -419,14 +445,14 @@ inline bool find_width(const std::string& layout, int* width_axis) {
  *
  * \return The output tensor in the same layout
  */
-inline Tensor pool(const Tensor& x, const Array<PrimExpr>& kernel_size,
+inline Array<Tensor> pool(const Tensor& x, const Array<PrimExpr>& kernel_size,
                    const Array<PrimExpr>& stride_size, const Array<PrimExpr>& padding_size,
                    PoolType pool_type, bool ceil_mode, const std::string& layout = "NCHW",
-                   bool count_include_pad = true) {
+                   bool count_include_pad = true, bool return_indices = false) {
   int height_axis = -1, width_axis = -1;
   ICHECK(find_height_width(layout, &height_axis, &width_axis)) << "Unsupported layout " << layout;
   return pool_impl(x, kernel_size, stride_size, padding_size, pool_type, ceil_mode, height_axis,
-                   width_axis, count_include_pad);
+                   width_axis, count_include_pad, return_indices);
 }
 
 /*!

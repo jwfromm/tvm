@@ -650,9 +650,9 @@ static inline Expr Reshape(Expr data, Array<Integer> newshape) {
 
 static inline Expr AvgPool2D(Expr data, Array<IndexExpr> pool_size, Array<IndexExpr> strides,
                              Array<IndexExpr> padding, std::string layout, bool ceil_mode,
-                             bool count_include_pad) {
+                             bool count_include_pad, bool return_indices=false) {
   return MakeAvgPool<AvgPool2DAttrs>(data, pool_size, strides, padding, layout, ceil_mode,
-                                     count_include_pad, "nn.avg_pool2d");
+                                     count_include_pad, return_indices, "nn.avg_pool2d");
 }
 
 static inline Expr Pad(Expr data, Array<Array<IndexExpr>> pad_width, double pad_value,
