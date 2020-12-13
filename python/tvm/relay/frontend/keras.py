@@ -1118,7 +1118,7 @@ def keras_op_to_relay(inexpr, keras_layer, outname, etab):
         etab.set_expr(name, out)
 
 
-def from_keras(model, shape=None, layout="NCHW"):
+def from_keras(model, shape=None, layout="NCHW", custom_convert_map=None):
     """Convert keras model to relay Function.
 
     Parameters
@@ -1133,6 +1133,11 @@ def from_keras(model, shape=None, layout="NCHW"):
         One of 'NCHW' or 'NHWC', indicates how data should be arranged in
         the output model. Default layout is 'NCHW' as it in general
         performs better across TVM.
+
+    custom_convert_map : Dictionary of str to Relay op
+        A custom op conversion map in the same format as _convert_map above.
+        This can be useful for overwriting or adding converters in non-standard
+        use cases.
 
     Returns
     -------
@@ -1152,6 +1157,9 @@ def from_keras(model, shape=None, layout="NCHW"):
         etab.set_expr(input_name, new_var(input_name, shape=input_shape))
 
     is_tf_keras = _check_model_is_tf_keras()
+
+    if custom_convert_map is not None:
+        _convert_map.update(custom_convert_map)
 
     if not is_tf_keras:
         # Importing from Keras
