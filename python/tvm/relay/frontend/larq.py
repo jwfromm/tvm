@@ -24,6 +24,8 @@ def _convert_quantconv2d(inexpr, keras_layer, etab):
     # Quantize weights using ste sign.
     weight = (weight > 0).astype('int8')
     weight = _op.cast(etab.new_const(weight), 'int16')
+    # Apply bitpacking for x86 backend.
+    #weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=0, pack_type='uint32')
 
     params = {
         'weight': weight,
@@ -58,6 +60,8 @@ def _convert_quantconv2d(inexpr, keras_layer, etab):
     # Quantize input.
     inexpr = _op.cast(_op.greater(inexpr, _expr.const(0, dtype='float32')), 'int8')
     out = _op.nn.bitserial_conv2d(data=inexpr, **params)
+    # Cast output back to float32
+    out = _op.cast(out, 'float32')
 
     if keras_layer.use_bias:
         bias = etab.new_const(weightList[1])
@@ -66,6 +70,37 @@ def _convert_quantconv2d(inexpr, keras_layer, etab):
         else:
             out = _op.nn.bias_add(out, bias, axis=1)
     # apply activation if specified
+    act_type = keras_layer.activation.__name__
+    if act_type != 'linear' and keras_layer.use_act:
+        out = _convert_activation(out, act_type, etab)
+    return out
+
+
+def _convert_quantdense(inexpr, keras_layer, etab):
+    weightList = keras_layer.get_weights()
+    # Quantize weights.
+    weight = weightList[0].transpose([1, 0])
+    weight = (weight > 0).astype('int8')
+    weight = _op.cast(etab.new_const(weight), 'int8')
+    # Apply bitpacking for x86 backend
+    weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=1, pack_type='uint32')
+
+    params = {
+        'weight': weight,
+        'units': weightList[0].shape[1],
+        'data_bits': 1,
+        'weight_bits': 1,
+        'out_dtype': 'int16',
+        'pack_dtype': 'uint32',
+    }
+    out = _op.nn.bitserial_dense(data=inexpr, **params)
+    # Cast output back to float32
+    out = _op.cast(out, 'float32')
+
+    if keras_layer.use_bias:
+        bias = etab.new_const(weightList[1])
+        out = _op.nn.bias_add(out, bias)
+    
     act_type = keras_layer.activation.__name__
     if act_type != 'linear' and keras_layer.use_act:
         out = _convert_activation(out, act_type, etab)
