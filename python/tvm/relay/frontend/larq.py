@@ -1,3 +1,4 @@
+import tvm
 from .keras import _check_data_format, _get_pad_pair, _convert_activation
 from .. import op as _op
 from .. import expr as _expr
@@ -25,7 +26,14 @@ def _convert_quantconv2d(inexpr, keras_layer, etab):
     weight = (weight > 0).astype('int8')
     weight = _op.cast(etab.new_const(weight), 'int16')
     # Apply bitpacking for x86 backend.
-    weight = _op.nn.bitpack(weight, bits=1, pack_axis=2, bit_axis=4, pack_type='uint32')
+    if etab.data_layout == 'NHWC':
+        weight = _op.nn.bitpack(weight, bits=1, pack_axis=2, bit_axis=4, pack_type='uint32')
+    elif etab.data_layout == 'NCHW':
+        weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=0, pack_type='uint32')
+    else:
+        raise tvm.error.OpNotImplemented(
+            "Only NHWC and NCHW layouts are currently supported for larq conversion."
+        )
 
     params = {
         'weight': weight,
