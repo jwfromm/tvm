@@ -24,12 +24,12 @@ def _convert_quantconv2d(inexpr, keras_layer, etab):
 
     # Quantize weights using ste sign.
     weight = (weight > 0).astype('int8')
-    weight = _op.cast(etab.new_const(weight), 'int16')
+    weight = _op.cast(etab.new_const(weight), 'int8')
     # Apply bitpacking for x86 backend.
     if etab.data_layout == 'NHWC':
-        weight = _op.nn.bitpack(weight, bits=1, pack_axis=2, bit_axis=4, pack_type='uint32')
+        weight = _op.nn.bitpack(weight, bits=1, pack_axis=2, bit_axis=4, pack_type='uint64')
     elif etab.data_layout == 'NCHW':
-        weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=0, pack_type='uint32')
+        weight = _op.nn.bitpack(weight, bits=1, pack_axis=1, bit_axis=0, pack_type='uint64')
     else:
         raise tvm.error.OpNotImplemented(
             "Only NHWC and NCHW layouts are currently supported for larq conversion."
@@ -42,8 +42,8 @@ def _convert_quantconv2d(inexpr, keras_layer, etab):
         'padding': [0, 0],
         'activation_bits': 1,
         'weight_bits': 1,
-        'out_dtype': 'int16',
-        'pack_dtype': 'uint32',
+        'out_dtype': 'int32',
+        'pack_dtype': 'uint64',
         'unipolar': False,
         'kernel_layout': kernel_layout,
         'data_layout': etab.data_layout,

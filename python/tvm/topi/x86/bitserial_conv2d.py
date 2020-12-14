@@ -483,7 +483,7 @@ def _schedule_bitserial_conv2d_nchw(
         oaxis = oco
         paxis = oco
     else:
-        oco, ico = s[last].split(co, bc)
+        oco, ico = cfg["tile_oh"].apply(s, last, oh)
         oaxis = oco
         paxis = ico
 
