@@ -71,7 +71,7 @@
 #define TVM_CUDA_RUNTIME 1
 #define TVM_METAL_RUNTIME 1
 #define TVM_OPENCL_RUNTIME 1
-
+#define TVM_THREADPOOL_USE_OPENMP 1
 // Uncomment the following lines to enable Metal
 // #include "../../src/runtime/metal/metal_device_api.mm"
 // #include "../../src/runtime/metal/metal_module.mm"

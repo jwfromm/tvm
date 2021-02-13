@@ -36,12 +36,12 @@ lib/libtvm_runtime_pack.o: tvm_runtime_pack.cc
 	$(CXX) -c $(PKG_CFLAGS) -o $@  $^
 
 # The code library built by TVM
-lib/test_addone_sys.o: prepare_test_libs.py
+lib/rtmi_lib.so: prepare_test_libs.py
 	@mkdir -p $(@D)
-	python3 prepare_test_libs.py
+	python prepare_test_libs.py
 
 # Deploy using the all in one TVM package library
-lib/cpp_deploy_pack: cpp_deploy.cc lib/libtvm_runtime_pack.o
+lib/cpp_deploy_pack: cpp_deploy.cc lib/libtvm_runtime_pack.o lib/rtmi_lib.so
 	@mkdir -p $(@D)
 	$(CXX) $(PKG_CFLAGS) -o $@  $^ $(PKG_LDFLAGS)
 

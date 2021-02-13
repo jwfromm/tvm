@@ -30,7 +30,6 @@
 #include <chrono>
 
 void DeployGraphRuntime(size_t tid) {
-  LOG(INFO) << "Starting Thread" << tid << " on " << sched_getcpu() << "...\n";
   // load in the library
   DLContext ctx{kDLCPU, 0};
   tvm::runtime::Module mod_factory = tvm::runtime::Module::LoadFromFile("lib/rtmi_lib.so");
@@ -55,26 +54,27 @@ void DeployGraphRuntime(size_t tid) {
   }
 
   std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+  // set the right input
+  set_input("bgrm", x);
   for (int i = 0; i < 10000; ++i) {
-    LOG(INFO) << tid;
-    // set the right input
-    set_input("bgrm", x);
     // run the code
     run();
-    // get the output
-    get_output(0, y);
   }
+  // get the output
+  get_output(0, y);
+
   std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-  std::cout << "Time difference = " << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << "[ms]" << std::endl;
+  std::cout << "Time difference = " << ((float) std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000.0 << "[ms]" << std::endl;
 }
 
 int main(void) {
-  //putenv("TVM_NUM_THREADS=1");
+  putenv("TVM_NUM_THREADS=1");
+  std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
   #pragma omp parallel for
   for (size_t tid = 0; tid < 8; ++tid) {
     DeployGraphRuntime(tid);
-    //while(true) {
-    //}
   }
+  std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+  std::cout << "Total Time = " << ((float) std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) / 1000.0 << "[ms]" << std::endl;
   return 0;
 }

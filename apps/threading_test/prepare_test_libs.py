@@ -18,7 +18,7 @@
 import tvm
 import numpy as np
 from tvm import te
-from tvm import relay
+from tvm import relay, auto_scheduler
 import onnx
 import os
 
@@ -28,8 +28,9 @@ def prepare_graph_lib(base_path):
     mod, params = relay.frontend.from_onnx(onnx_model, shape={'bgrm': [1, 4, 176, 96]}, freeze_params=True)
     mod = relay.transform.DynamicToStatic()(mod)
     # build a module
-    with tvm.transform.PassContext(opt_level=3):
-        compiled_lib = relay.build(mod, tvm.target.create("llvm -mcpu=cascadelake"), params=params)
+    with auto_scheduler.ApplyHistoryBest('fp32_bs1_baseline_1thread.json'):
+        with tvm.transform.PassContext(opt_level=3, config={'relay.backend.use_auto_scheduler': True}):
+            compiled_lib = relay.build(mod, tvm.target.create("llvm -mcpu=cascadelake"), params=params)
     # export it as a shared library
     # If you are running cross compilation, you can also consider export
     # to tar and invoke host compiler later.
