@@ -41,6 +41,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <omp.h>
 
 const constexpr int kL1CacheBytes = 64;
 
@@ -372,10 +373,10 @@ int TVMBackendParallelLaunch(FTVMParallelLambda flambda, void* cdata, int num_ta
     (*flambda)(0, &env, cdata);
     return 0;
   } else {
-#if !TVM_THREADPOOL_USE_OPENMP
-    int res = tvm::runtime::ThreadPool::ThreadLocal()->Launch(flambda, cdata, num_task, 1);
-    return res;
-#else
+//#if !TVM_THREADPOOL_USE_OPENMP
+//    int res = tvm::runtime::ThreadPool::ThreadLocal()->Launch(flambda, cdata, num_task, 1);
+//    return res;
+//#else
     if (num_task == 0) num_task = num_workers;
     omp_set_num_threads(num_task);
 #pragma omp parallel num_threads(num_task)
@@ -385,7 +386,7 @@ int TVMBackendParallelLaunch(FTVMParallelLambda flambda, void* cdata, int num_ta
       (*flambda)(omp_get_thread_num(), &env, cdata);
     }
     return 0;
-#endif
+//#endif
   }
 }
 

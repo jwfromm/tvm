@@ -40,14 +40,18 @@ void DeployGraphRuntime(size_t tid) {
   tvm::runtime::PackedFunc run = gmod.GetFunction("run");
 
   // Use the C++ API
-  tvm::runtime::NDArray x = tvm::runtime::NDArray::Empty({1, 4, 176, 96}, DLDataType{kDLFloat, 32, 1}, ctx);
-  tvm::runtime::NDArray y = tvm::runtime::NDArray::Empty({1, 1, 176, 96}, DLDataType{kDLFloat, 32, 1}, ctx);
+  int N = 1;
+  int C = 4;
+  int H = 176;
+  int W = 96;
+  tvm::runtime::NDArray x = tvm::runtime::NDArray::Empty({N, C, H, W}, DLDataType{kDLFloat, 32, 1}, ctx);
+  tvm::runtime::NDArray y = tvm::runtime::NDArray::Empty({N, 1, H, W}, DLDataType{kDLFloat, 32, 1}, ctx);
 
-  for (int n = 0; n < 1; ++n) {
-    for (int c = 0; c < 4; ++c) {
-      for (int h = 0; h < 176; ++h) {
-        for (int w = 0; w < 96; ++w) {
-          static_cast<float*>(x->data)[(n * 4 * 176 * 96) + (c * 176 * 96) + (h * 96) + w] = n * 2 + c;
+  for (int n = 0; n < N; ++n) {
+    for (int c = 0; c < C; ++c) {
+      for (int h = 0; h < H; ++h) {
+        for (int w = 0; w < W; ++w) {
+          static_cast<float*>(x->data)[(n * C * H * W) + (c * H * W) + (h * W) + w] = n * 2 + c;
         }
       }
     }
@@ -68,7 +72,8 @@ void DeployGraphRuntime(size_t tid) {
 }
 
 int main(void) {
-  putenv("TVM_NUM_THREADS=1");
+  putenv("TVM_NUM_THREADS=2");
+  putenv("TVM_THREADPOOL_USE_OPENMP=1");
   std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
   #pragma omp parallel for
   for (size_t tid = 0; tid < 8; ++tid) {
