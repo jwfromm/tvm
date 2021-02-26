@@ -128,8 +128,9 @@ SType IRBuilder::GetStructArrayType(const SType& value_type, uint32_t num_elems)
     ib_.Begin(spv::OpTypeRuntimeArray).AddSeq(arr_type, value_type).Commit(&global_);
   }
   int nbits = value_type.type.bits() * value_type.type.lanes();
-  ICHECK_EQ(nbits % 8, 0);
-  uint32_t nbytes = static_cast<uint32_t>(nbits) / 8;
+  ICHECK_EQ(!(nbits % 8) || (nbits == 1), 1);
+  uint32_t nbytes = std::max(static_cast<uint32_t>(nbits) / 8, (uint32_t) 1);
+
   // decorate the array type.
   this->Decorate(spv::OpDecorate, arr_type, spv::DecorationArrayStride, nbytes);
   // declare struct of array

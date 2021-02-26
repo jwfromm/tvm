@@ -323,6 +323,9 @@ spirv::Value CodeGenSPIRV::VisitExpr_(const CallNode* op) {
     return builder_->MakeValue(spv::OpBitCount, builder_->GetSType(op->dtype),
                                MakeValue(op->args[0]));
   } else {
+    auto global_symbol = Downcast<StringImm>(op->args[0]);
+    auto gs = global_symbol->value;
+    std::cout << "global symbol value: " <<  global_symbol->value << std::endl;
     LOG(FATAL) << "Unresolved call  " << op->op;
     return spirv::Value();
   }

@@ -32,6 +32,7 @@ from .. import op as _op
 from .. import vision as _vision
 from .. import loops as _loops
 from .. import ty as _ty
+from .. import annotation as _annotation
 
 from .common import AttrCvt, Renamer
 from .common import get_relay_op, new_var, infer_shape, infer_channels, infer_value, fold_constant
@@ -2957,6 +2958,12 @@ class GraphProto:
             attr["tvm_custom"] = {}
             attr["tvm_custom"]["name"] = i_name
             attr["tvm_custom"]["num_outputs"] = len(node_output)
+
+            if node.name == "NonMaxSuppression_683" or node.name == "Squeeze_719" or node.name == "Relu_317":
+                new_inputs = []
+                for i in inputs:
+                    new_inputs.append(_annotation.on_device(i, "cpu"))
+                inputs = new_inputs
 
             op = self._convert_operator(op_name, inputs, attr, opset)
             if not isinstance(op, _expr.TupleWrapper):
