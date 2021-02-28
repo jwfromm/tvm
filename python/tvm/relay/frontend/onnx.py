@@ -2188,8 +2188,15 @@ class Loop(OnnxOpConverter):
         # Load nodes from outer graph into inner graph.
         subgraph_scope._nodes = graph_scope._nodes.copy()
 
+        # Import the loop body into relay.
+        with subgraph_scope:
+            body_output = subgraph_scope.from_onnx(body, graph_scope.opset, get_output_expr=True)
+
+        # Populate the loop body's shape
+        body_output = infer_type(body_output)
+
         # Create a list of variables for each value updated in the loop.
-        def get_var(name, val, scan=False):
+        def get_var(name, val):
             checked_type = infer_type(val)
             if hasattr(checked_type, "type_annotation"):
                 checked_type = checked_type.type_annotation
@@ -2202,14 +2209,11 @@ class Loop(OnnxOpConverter):
                     actual_shape.append(_ty.Any())
                 else:
                     actual_shape.append(dim)
-            if scan:
-                return _expr.var(name, shape=[_ty.Any()] + actual_shape, dtype=checked_type.dtype)
-
             return _expr.var(name, shape=actual_shape, dtype=checked_type.dtype)
 
         loop_vars = [
             _expr.var(body.input[0].name, shape=(), dtype=iter_dtype),  # iteration count
-            _expr.var("max_count", shape=(), dtype=iter_dtype),  # iteration count
+            _expr.var("max_count", shape=(), dtype=iter_dtype),  # maximum iterations
             get_var(body.input[1].name, cond),  # exit condition
         ]
         loop_vars += [get_var(body.input[i + 2].name, v) for i, v in enumerate(loop_deps)]
@@ -2229,14 +2233,15 @@ class Loop(OnnxOpConverter):
         scan_output_vars = []
         scan_output_init = []
         for i in range(num_scan_outputs):
-            name, shape, dtype, _ = get_info(body.output[i + 1 + num_deps])
-            if dtype == "float":
-                dtype = "float32"
+            name = body.output[i + 1 + num_deps].name
+            output_info = body_output[i + 1 + num_deps]
+            output_shape = list(output_info.checked_type.shape)
+            output_type = output_info.checked_type.dtype
             scan_output_vars.append(
-                _expr.var(name, shape=([_ty.Any()] * (len(shape) + 1)), dtype=dtype)
+                _expr.var(name, shape=([_ty.Any()] + output_shape), dtype=output_type)
             )
             scan_output_init.append(
-                _op.reshape(_expr.const(np.array([]).astype(dtype)), [0] + [1] * len(shape))
+                _op.reshape(_expr.const(np.array([]).astype(output_type)), [0] + output_shape)
             )
 
         # Now we can remove loop iter variables from our inner loop's inputs.
@@ -2255,17 +2260,23 @@ class Loop(OnnxOpConverter):
             current_vars = list(loop_inputs[3 : (3 + num_deps)])
             scan_outputs = loop_inputs[(3 + num_deps) :]
 
-            # Prepare body inputs by adding them to node dictionary.
+            # Group up all the loop variables into a list.
             new_inputs = [loop_count, max_count, cond] + current_vars
-            for i, inp in enumerate(new_inputs):
-                subgraph_scope._nodes[loop_var_names[i]] = inp
 
-            # Get the output of the current loop using the updated inputs.
-            with subgraph_scope:
-                loop_outputs = subgraph_scope.from_onnx(
-                    body, graph_scope.opset, get_output_expr=True
-                )
-            # Unpack the body outputs and prepare variables for next iteration.
+            # Construct a mapping between loop variable names and values.
+            new_input_dict = {}
+            for i in new_inputs:
+                new_input_dict[i.name_hint] = i
+
+            # Now assign each free variable in the body to the proper loop variable.
+            free_vars = analysis.free_vars(body_output)
+            free_var_map = {}
+            for fv in free_vars:
+                free_var_map[fv] = new_input_dict[fv.name_hint]
+
+            # Finally we bind the free variables to construct the expr for this iteration
+            loop_outputs = _expr.bind(body_output, free_var_map)
+
             new_cond = loop_outputs[0]
             new_loop_vars = [loop_outputs[i] for i in range(1, 1 + num_deps)]
             new_scan_outputs = [loop_outputs[i] for i in range(1 + num_deps, len(loop_outputs))]
