@@ -183,7 +183,7 @@ inline PackedFunc PackFuncNonBufferArg_(F f, int base, const std::vector<ArgConv
       switch (codes[i]) {
         case INT64_TO_INT64:
         case FLOAT64_TO_FLOAT64: {
-          LOG(FATAL) << "Do not support 64bit argument to device function";
+          LOG(FATAL) << "Packed functions do not support 64 bit floating point arguments to device functions.";
           break;
         }
         case INT64_TO_INT32: {
