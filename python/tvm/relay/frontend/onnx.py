@@ -2272,7 +2272,8 @@ class Loop(OnnxOpConverter):
             free_vars = analysis.free_vars(body_output)
             free_var_map = {}
             for fv in free_vars:
-                free_var_map[fv] = new_input_dict[fv.name_hint]
+                if fv.name_hint in new_input_dict:
+                    free_var_map[fv] = new_input_dict[fv.name_hint]
 
             # Finally we bind the free variables to construct the expr for this iteration
             loop_outputs = _expr.bind(body_output, free_var_map)
@@ -3138,7 +3139,7 @@ def from_onnx(model, shape=None, dtype="float32", opset=None, freeze_params=Fals
             # try use onnx's own model checker before converting any model
             try:
                 onnx.checker.check_model(model)
-            except onnx.onnx_cpp2py_export.checker.ValidationError as e:  # pylint: disable=c-extension-no-member
+            except Exception as e: #pylint: disable=c-extension-no-member
                 # the checker is a bit violent about errors, so simply print warnings here
                 warnings.warn(str(e))
     except ImportError:
