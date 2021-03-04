@@ -2263,20 +2263,14 @@ class Loop(OnnxOpConverter):
             # Group up all the loop variables into a list.
             new_inputs = [loop_count, max_count, cond] + current_vars
 
-            # Construct a mapping between loop variable names and values.
-            new_input_dict = {}
-            for i in new_inputs:
-                new_input_dict[i.name_hint] = i
+            for i, inp in enumerate(new_inputs):
+                subgraph_scope._nodes[loop_var_names[i]] = inp
 
-            # Now assign each free variable in the body to the proper loop variable.
-            free_vars = analysis.free_vars(body_output)
-            free_var_map = {}
-            for fv in free_vars:
-                if fv.name_hint in new_input_dict:
-                    free_var_map[fv] = new_input_dict[fv.name_hint]
-
-            # Finally we bind the free variables to construct the expr for this iteration
-            loop_outputs = _expr.bind(body_output, free_var_map)
+            # Get the output of the current loop using the updated inputs.
+            with subgraph_scope:
+                loop_outputs = subgraph_scope.from_onnx(
+                    body, graph_scope.opset, get_output_expr=True
+                )
 
             new_cond = loop_outputs[0]
             new_loop_vars = [loop_outputs[i] for i in range(1, 1 + num_deps)]
