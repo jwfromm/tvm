@@ -2182,15 +2182,13 @@ class Loop(OnnxOpConverter):
 
         # Get the current graph proto and create a clone for the subgraph
         graph_scope = GraphProto.current
-        subgraph_scope = GraphProto(
+        subgraph = GraphProto(
             graph_scope._shape, graph_scope._dtype, graph_scope._freeze_params
         )
-        # Load nodes from outer graph into inner graph.
-        subgraph_scope._nodes = graph_scope._nodes.copy()
 
         # Import the loop body into relay.
-        with subgraph_scope:
-            body_output = subgraph_scope.from_onnx(body, graph_scope.opset, get_output_expr=True)
+        with graph_scope:
+            body_output = subgraph.from_onnx(body, graph_scope.opset, get_output_expr=True)
 
         # Populate the loop body's shape
         body_output = infer_type(body_output)
@@ -2244,12 +2242,6 @@ class Loop(OnnxOpConverter):
                 _op.reshape(_expr.const(np.array([]).astype(output_type)), [0] + output_shape)
             )
 
-        # Now we can remove loop iter variables from our inner loop's inputs.
-        # This is kind of a hack since we have graph inputs that we don't
-        # want to treat as actual inputs.
-        while len(body.input) != 0:
-            body.input.pop(0)
-
         # Define the loop body, in this function we need to unpack loop inputs,
         # convert the loop subgraph, and pack outputs for the next iteration.
         def body_fn(*loop_inputs):
@@ -2263,15 +2255,21 @@ class Loop(OnnxOpConverter):
             # Group up all the loop variables into a list.
             new_inputs = [loop_count, max_count, cond] + current_vars
 
-            for i, inp in enumerate(new_inputs):
-                subgraph_scope._nodes[loop_var_names[i]] = inp
+            # Construct a mapping between loop variable names and values.
+            new_input_dict = {}
+            for i in new_inputs:
+                new_input_dict[i.name_hint] = i
 
-            # Get the output of the current loop using the updated inputs.
-            with subgraph_scope:
-                loop_outputs = subgraph_scope.from_onnx(
-                    body, graph_scope.opset, get_output_expr=True
-                )
+            # Now assign each free variable in the body to the proper loop variable.
+            free_vars = analysis.free_vars(body_output)
+            free_var_map = {}
+            for fv in free_vars:
+                if fv.name_hint in new_input_dict:
+                    free_var_map[fv] = new_input_dict[fv.name_hint]
 
+            # Finally we bind the free variables to construct the expr for this iteration
+            loop_outputs = _expr.bind(body_output, free_var_map)
+            
             new_cond = loop_outputs[0]
             new_loop_vars = [loop_outputs[i] for i in range(1, 1 + num_deps)]
             new_scan_outputs = [loop_outputs[i] for i in range(1 + num_deps, len(loop_outputs))]
@@ -2308,6 +2306,15 @@ class Loop(OnnxOpConverter):
         init_count = _expr.const(0, dtype=iter_dtype)
         loop_vals = loop(init_count, max_loop_count, cond, *loop_deps, *scan_output_init)
 
+        # Now we connect free variables in the loop that reference outer scope nodes.
+        free_vars = analysis.free_vars(loop_vals)
+        free_var_map = {}
+        for fv in free_vars:
+            if fv.name_hint in graph_scope._nodes:
+                free_var_map[fv] = graph_scope._nodes[fv.name_hint]
+        # Bind outer nodes to the free vars.
+        loop_vals = _expr.bind(loop_vals, free_var_map)
+
         # Extract final iteration outputs.
         if num_deps + num_scan_outputs == 1:
             outputs = _expr.TupleGetItem(loop_vals, 3)
@@ -2322,12 +2329,9 @@ class Loop(OnnxOpConverter):
                 num_deps + num_scan_outputs,
             )
 
-        # Update outer graph with constants found in the subgraph.
-        free_vars = analysis.free_vars(loop)
-        graph_scope._params.update(subgraph_scope._params)
-        graph_scope._nodes.update(subgraph_scope._nodes)
-        for var in free_vars:
-            graph_scope._nodes.update({var.name_hint: var})
+        # Update outer graph with parameters found in the subgraph.
+        graph_scope._params.update(subgraph._params)
+        #graph_scope._nodes.update(subgraph._nodes)
         return outputs
 
 
@@ -2958,7 +2962,22 @@ class GraphProto:
             inputs = onnx_input()
             for i in node.input:
                 if i != "":
-                    inputs[i] = self._nodes[self._renames.get(i, i)]
+                    # Check if the node inputs are present in the graph. If not,
+                    # it may be referencing a node in the outer scope, in which case
+                    # we should create a new input for that node.
+                    i_name = self._renames.get(i, i)
+                    # Try to determine information about the node in the outer scope.
+                    if i_name not in self._nodes:
+                        outer_scope = GraphProto.current
+                        input_node = outer_scope._nodes[i_name]
+                        input_type_info = infer_type(input_node).checked_type
+                        i_shape, i_dtype = input_type_info.shape, input_type_info.dtype
+                        # Construct new input variable and note it as an input.
+                        self._nodes[i_name] = new_var(i_name, shape=i_shape, dtype=i_dtype)
+                        self._inputs[i_name] = self._nodes[i_name]
+
+                    inputs[i] = self._nodes[i_name]
+
             i_name = self._parse_value_proto(node)
             node_output = self._fix_outputs(op_name, node.output)
             attr["tvm_custom"] = {}
