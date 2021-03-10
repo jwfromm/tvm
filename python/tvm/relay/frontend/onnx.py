@@ -2230,13 +2230,16 @@ class Loop(OnnxOpConverter):
         scan_output_init = []
         for i in range(num_scan_outputs):
             name = body.output[i + 1 + num_deps].name
-            try:
+            name, shape, dtype, _ = get_info(body.output[i + 1 + num_deps])
+            # See if shape information is available in the onnx graph.
+            if shape != []:
+                output_shape = shape
+                output_type = 'float32' if dtype == 'float' else dtype
+            # If not, we can do type inference to extract it.
+            else:
                 output_info = infer_type(body_output[i + 1 + num_deps])
-            except:
-                print(body_output[i + 1  + num_deps])
-                exit()
-            output_shape = list(output_info.checked_type.shape)
-            output_type = output_info.checked_type.dtype
+                output_shape = list(output_info.checked_type.shape)
+                output_type = output_info.checked_type.dtype
             scan_output_vars.append(
                 _expr.var(name, shape=([_ty.Any()] + output_shape), dtype=output_type)
             )
