@@ -32,6 +32,7 @@ from .. import op as _op
 from .. import vision as _vision
 from .. import loops as _loops
 from .. import ty as _ty
+from .. import transform as _transform
 
 from .common import AttrCvt, Renamer
 from .common import get_relay_op, new_var, infer_shape, infer_channels, infer_value, fold_constant
@@ -2181,17 +2182,15 @@ class Loop(OnnxOpConverter):
             return out_while
 
         # Get the current graph proto and create a clone for the subgraph
-        graph_scope = GraphProto.current
+        graph_scopes = GraphProto.current
+        outer_scope = graph_scopes[0]
         subgraph = GraphProto(
-            graph_scope._shape, graph_scope._dtype, graph_scope._freeze_params
+            outer_scope._shape, outer_scope._dtype, outer_scope._freeze_params
         )
 
         # Import the loop body into relay.
-        with graph_scope:
-            body_output = subgraph.from_onnx(body, graph_scope.opset, get_output_expr=True)
-
-        # Populate the loop body's shape
-        body_output = infer_type(body_output)
+        with subgraph:
+            body_output = subgraph.from_onnx(body, outer_scope.opset, get_output_expr=True)
 
         # Create a list of variables for each value updated in the loop.
         def get_var(name, val):
@@ -2215,7 +2214,6 @@ class Loop(OnnxOpConverter):
             get_var(body.input[1].name, cond),  # exit condition
         ]
         loop_vars += [get_var(body.input[i + 2].name, v) for i, v in enumerate(loop_deps)]
-        loop_var_names = [v.name_hint for v in loop_vars]
 
         num_scan_outputs = len(body.output) - (1 + num_deps)
         # TODO (jwfromm) Test with strided slice once type unifier for this case is fixed.
@@ -2232,12 +2230,19 @@ class Loop(OnnxOpConverter):
         scan_output_init = []
         for i in range(num_scan_outputs):
             name = body.output[i + 1 + num_deps].name
-            output_info = body_output[i + 1 + num_deps]
+            try:
+                output_info = infer_type(body_output[i + 1 + num_deps])
+            except:
+                print(body_output[i + 1  + num_deps])
+                exit()
             output_shape = list(output_info.checked_type.shape)
             output_type = output_info.checked_type.dtype
             scan_output_vars.append(
                 _expr.var(name, shape=([_ty.Any()] + output_shape), dtype=output_type)
             )
+            # If there are any dynamic shapes, we'll just replace them with 1 for now since they'll
+            # get broadcast later.
+            output_shape = [dim if not isinstance(dim, type(_ty.Any())) else 1 for dim in output_shape]
             scan_output_init.append(
                 _op.reshape(_expr.const(np.array([]).astype(output_type)), [0] + output_shape)
             )
@@ -2310,8 +2315,9 @@ class Loop(OnnxOpConverter):
         free_vars = analysis.free_vars(loop_vals)
         free_var_map = {}
         for fv in free_vars:
-            if fv.name_hint in graph_scope._nodes:
-                free_var_map[fv] = graph_scope._nodes[fv.name_hint]
+            for graph_scope in graph_scopes:
+                if fv.name_hint in graph_scope._nodes:
+                    free_var_map[fv] = graph_scope._nodes[fv.name_hint]
         # Bind outer nodes to the free vars.
         loop_vals = _expr.bind(loop_vals, free_var_map)
 
@@ -2349,7 +2355,7 @@ class If(OnnxOpConverter):
         assert then_branch is not None and else_branch is not None
 
         # Create graph converters for both branches.
-        graph_scope = GraphProto.current
+        graph_scope = GraphProto.current[0]
         then_graph = GraphProto(graph_scope._shape, graph_scope._dtype, graph_scope._freeze_params)
         then_graph._nodes = graph_scope._nodes.copy()
         else_graph = GraphProto(graph_scope._shape, graph_scope._dtype, graph_scope._freeze_params)
@@ -2832,7 +2838,7 @@ class GraphProto:
 
     """
 
-    current = None
+    current = []
 
     def __init__(self, shape, dtype, freeze_params=False):
         self._nodes = {}
@@ -2847,12 +2853,11 @@ class GraphProto:
         self._freeze_params = freeze_params
 
     def __enter__(self):
-        self._old_manager = GraphProto.current
-        GraphProto.current = self
-        return self
+        GraphProto.current.append(self)
+        return GraphProto.current
 
     def __exit__(self, ptype, value, trace):
-        GraphProto.current = self._old_manager
+        GraphProto.current.pop()
 
     def freeze(self, func, params):
         bind_map = {}
@@ -2968,13 +2973,16 @@ class GraphProto:
                     i_name = self._renames.get(i, i)
                     # Try to determine information about the node in the outer scope.
                     if i_name not in self._nodes:
-                        outer_scope = GraphProto.current
-                        input_node = outer_scope._nodes[i_name]
-                        input_type_info = infer_type(input_node).checked_type
-                        i_shape, i_dtype = input_type_info.shape, input_type_info.dtype
-                        # Construct new input variable and note it as an input.
-                        self._nodes[i_name] = new_var(i_name, shape=i_shape, dtype=i_dtype)
-                        self._inputs[i_name] = self._nodes[i_name]
+                        outer_scopes = GraphProto.current
+                        # Iterate through outer scopes to find the input node.
+                        for scope in outer_scopes:
+                            if i_name in scope._nodes:
+                                input_node = scope._nodes[i_name]
+                                input_type_info = infer_type(input_node).checked_type
+                                i_shape, i_dtype = input_type_info.shape, input_type_info.dtype
+                                # Construct new input variable and note it as an input.
+                                self._nodes[i_name] = new_var(i_name, shape=i_shape, dtype=i_dtype)
+                                self._inputs[i_name] = self._nodes[i_name]
 
                     inputs[i] = self._nodes[i_name]
 
