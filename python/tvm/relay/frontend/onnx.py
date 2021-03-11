@@ -2229,14 +2229,30 @@ class Loop(OnnxOpConverter):
         scan_output_vars = []
         scan_output_init = []
         for i in range(num_scan_outputs):
+            name = body.output[i + 1 + num_deps].name
             name, shape, dtype, _ = get_info(body.output[i + 1 + num_deps])
-            if dtype == "float":
-                dtype = "float32"
+            # See if shape information is available in the onnx graph.
+            if shape != []:
+                output_shape = shape
+                output_type = 'float32' if dtype == 'float' else dtype
+            # If not, we can do type inference to extract it.
+            else:
+                # Convert the body to relay so we can infer its output shape.
+                with subgraph_scope:
+                    body_expr = subgraph_scope.from_onnx(body, graph_scope.opset, get_output_expr=True)
+                # Figure out the shape from the relay graph.
+                output_info = infer_type(body_expr[i + 1 + num_deps])
+                output_shape = list(output_info.checked_type.shape)
+                output_type = output_info.checked_type.dtype
+
             scan_output_vars.append(
-                _expr.var(name, shape=([_ty.Any()] * (len(shape) + 1)), dtype=dtype)
+                _expr.var(name, shape=([_ty.Any()] + output_shape), dtype=output_type)
             )
+            # If there are any dynamic shapes, we'll just replace them with 1 for now since they'll
+            # get broadcast later.
+            output_shape = [dim if not isinstance(dim, type(_ty.Any())) else 1 for dim in output_shape]
             scan_output_init.append(
-                _op.reshape(_expr.const(np.array([]).astype(dtype)), [0] + [1] * len(shape))
+                _op.reshape(_expr.const(np.array([]).astype(output_type)), [0] + output_shape)
             )
 
         # Now we can remove loop iter variables from our inner loop's inputs.
@@ -3127,7 +3143,7 @@ def from_onnx(model, shape=None, dtype="float32", opset=None, freeze_params=Fals
             # try use onnx's own model checker before converting any model
             try:
                 onnx.checker.check_model(model)
-            except onnx.onnx_cpp2py_export.checker.ValidationError as e:  # pylint: disable=c-extension-no-member
+            except Exception as e: #pylint: disable=c-extension-no-member
                 # the checker is a bit violent about errors, so simply print warnings here
                 warnings.warn(str(e))
     except ImportError:
