@@ -1074,10 +1074,10 @@ class Upsample(OnnxOpConverter):
 
 
 def shape_of(x, dtype="int64"):
-    ttype = infer_type(x).checked_type
-    if not _ty.is_dynamic(ttype):
-        shape = list(ttype.shape)
-        return _expr.const(shape, dtype)
+    #ttype = infer_type(x).checked_type
+    #if not _ty.is_dynamic(ttype):
+    #    shape = list(ttype.shape)
+    #    return _expr.const(shape, dtype)
     return _op.shape_of(x, dtype)
 
 
@@ -2315,14 +2315,25 @@ class Loop(OnnxOpConverter):
         loop_vals = loop(init_count, max_loop_count, cond, *loop_deps, *scan_output_init)
 
         # Now we connect free variables in the loop that reference outer scope nodes.
-        free_vars = analysis.free_vars(loop_vals)
-        free_var_map = {}
-        for fv in free_vars:
-            for graph_scope in graph_scopes:
-                if fv.name_hint in graph_scope._nodes:
-                    free_var_map[fv] = graph_scope._nodes[fv.name_hint]
-        # Bind outer nodes to the free vars.
-        loop_vals = _expr.bind(loop_vals, free_var_map)
+        # Bind from inner scopes to outer scopes to expose more dependencies.
+        for graph in graph_scopes:
+            free_vars = analysis.free_vars(loop_vals)
+            free_var_map = {}
+
+            for fv in free_vars:
+                if fv.name_hint in graph._nodes:
+                    free_var_map[fv] = graph._nodes[fv.name_hint]
+
+            # Bind outer nodes to the free vars.
+            loop_vals = _expr.bind(loop_vals, free_var_map)
+
+        # Add subgraph nodes to outer scopes if they haven't yet been defined.
+        for name, value in subgraph._nodes.items():
+            for graph in graph_scopes:
+                if name not in graph._nodes:
+                    graph._nodes[name] = value
+                elif isinstance(graph._nodes[name], _expr.Var):
+                    graph._nodes[name] = value
 
         # Extract final iteration outputs.
         if num_deps + num_scan_outputs == 1:
@@ -2338,9 +2349,6 @@ class Loop(OnnxOpConverter):
                 num_deps + num_scan_outputs,
             )
 
-        # Update outer graph with parameters found in the subgraph.
-        graph_scope._params.update(subgraph._params)
-        #graph_scope._nodes.update(subgraph._nodes)
         return outputs
 
 
@@ -2358,32 +2366,43 @@ class If(OnnxOpConverter):
         assert then_branch is not None and else_branch is not None
 
         # Create graph converters for both branches.
-        graph_scope = GraphProto.current[0]
-        then_graph = GraphProto(graph_scope._shape, graph_scope._dtype, graph_scope._freeze_params)
-        then_graph._nodes = graph_scope._nodes.copy()
-        else_graph = GraphProto(graph_scope._shape, graph_scope._dtype, graph_scope._freeze_params)
-        else_graph._nodes = graph_scope._nodes.copy()
+        graph_scopes = GraphProto.current
+        outer_scope = graph_scopes[0]
+        then_graph = GraphProto(outer_scope._shape, outer_scope._dtype)
+        else_graph = GraphProto(outer_scope._shape, outer_scope._dtype)
 
         # Convert each branch to a relay expression.
         with then_graph:
-            then_expr = then_graph.from_onnx(then_branch, graph_scope.opset, get_output_expr=True)
+            then_expr = then_graph.from_onnx(then_branch, outer_scope.opset, get_output_expr=True)
         with else_graph:
-            else_expr = else_graph.from_onnx(else_branch, graph_scope.opset, get_output_expr=True)
+            else_expr = else_graph.from_onnx(else_branch, outer_scope.opset, get_output_expr=True)
 
-        # Add constants from both branches to parent graph.
-        graph_scope._params.update(then_graph._params)
-        graph_scope._nodes.update(then_graph._nodes)
-        then_free_vars = analysis.free_vars(then_expr)
-        for var in then_free_vars:
-            graph_scope._nodes.update({var.name_hint: var})
-        graph_scope._params.update(else_graph._params)
-        graph_scope._nodes.update(else_graph._nodes)
-        else_free_vars = analysis.free_vars(else_expr)
-        for var in else_free_vars:
-            graph_scope._nodes.update({var.name_hint: var})
+        if_graph = _expr.If(cond, then_expr, else_expr)
 
-        # Now we can construct the relay if statement and return.
-        return _expr.If(cond, then_expr, else_expr)
+       # Now we connect free variables in the if that reference outer scope nodes.
+        # Bind from inner scopes to outer scopes to expose more dependencies.
+        for graph in graph_scopes:
+            free_vars = analysis.free_vars(if_graph)
+            free_var_map = {}
+
+            for fv in free_vars:
+                if fv.name_hint in graph._nodes:
+                    free_var_map[fv] = graph._nodes[fv.name_hint]
+
+            # Bind outer nodes to the free vars.
+            if_graph = _expr.bind(if_graph, free_var_map)
+
+        # Add subgraph nodes to outer scopes if they haven't yet been defined.
+        branches = [then_graph, else_graph]
+        for branch in branches:
+            for name, value in branch._nodes.items():
+                for graph in graph_scopes:
+                    if name not in graph._nodes:
+                        graph._nodes[name] = value
+                    elif isinstance(graph._nodes[name], _expr.Var):
+                        graph._nodes[name] = value
+                    
+        return if_graph
 
 
 class NonMaxSuppression(OnnxOpConverter):
@@ -2970,22 +2989,23 @@ class GraphProto:
             inputs = onnx_input()
             for i in node.input:
                 if i != "":
+                    # TODO this probably isnt working.
                     # Check if the node inputs are present in the graph. If not,
                     # it may be referencing a node in the outer scope, in which case
                     # we should create a new input for that node.
                     i_name = self._renames.get(i, i)
                     # Try to determine information about the node in the outer scope.
-                    if i_name not in self._nodes:
-                        outer_scopes = GraphProto.current
-                        # Iterate through outer scopes to find the input node.
-                        for scope in outer_scopes:
-                            if i_name in scope._nodes:
-                                input_node = scope._nodes[i_name]
-                                input_type_info = infer_type(input_node).checked_type
-                                i_shape, i_dtype = input_type_info.shape, input_type_info.dtype
-                                # Construct new input variable and note it as an input.
-                                self._nodes[i_name] = new_var(i_name, shape=i_shape, dtype=i_dtype)
-                                self._inputs[i_name] = self._nodes[i_name]
+                    #if i_name not in self._nodes:
+                    #    outer_scopes = GraphProto.current
+                    #    # Iterate through outer scopes to find the input node.
+                    #    for scope in reversed(outer_scopes):
+                    #        if i_name in scope._nodes:
+                    #            input_node = scope._nodes[i_name]
+                    #            input_type_info = infer_type(input_node).checked_type
+                    #            i_shape, i_dtype = input_type_info.shape, input_type_info.dtype
+                    #            # Construct new input variable and note it as an input.
+                    #            self._nodes[i_name] = new_var(i_name, shape=i_shape, dtype=i_dtype)
+                    #            self._inputs[i_name] = self._nodes[i_name]
 
                     inputs[i] = self._nodes[i_name]
 
